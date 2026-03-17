@@ -59,6 +59,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
         Code/02_Module/Src/mod_uart_guard.c
         Code/02_Module/Src/mod_battery.c
         Code/02_Module/Src/mod_led.c
+        Code/02_Module/Src/mod_key.c
         Code/02_Module/Src/mod_relay.c
         Code/02_Module/Src/mod_motor.c
         Code/02_Module/Src/mod_sensor.c
@@ -110,3 +111,5 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 
     # Add user defined libraries
 )
+
+
