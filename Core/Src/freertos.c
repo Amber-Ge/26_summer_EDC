@@ -25,6 +25,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+/* 引入初始化门控接口：默认任务启动后先等待 InitTask 完成全局初始化。 */
+#include "task_init.h"
 
 /* USER CODE END Includes */
 
@@ -68,13 +70,6 @@ const osThreadAttr_t KeyTask_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
-/* Definitions for PcTask */
-osThreadId_t PcTaskHandle;
-const osThreadAttr_t PcTask_attributes = {
-  .name = "PcTask",
-  .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
 /* Definitions for OledTask */
 osThreadId_t OledTaskHandle;
 const osThreadAttr_t OledTask_attributes = {
@@ -86,7 +81,7 @@ const osThreadAttr_t OledTask_attributes = {
 osThreadId_t TestTaskHandle;
 const osThreadAttr_t TestTask_attributes = {
   .name = "TestTask",
-  .stack_size = 1024 * 4,
+  .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityHigh,
 };
 /* Definitions for StepperTask */
@@ -100,8 +95,15 @@ const osThreadAttr_t StepperTask_attributes = {
 osThreadId_t DccTaskHandle;
 const osThreadAttr_t DccTask_attributes = {
   .name = "DccTask",
-  .stack_size = 256 * 4,
+  .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityRealtime,
+};
+/* Definitions for InitTask */
+osThreadId_t InitTaskHandle;
+const osThreadAttr_t InitTask_attributes = {
+  .name = "InitTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityRealtime7,
 };
 /* Definitions for PcMutex */
 osMutexId_t PcMutexHandle;
@@ -113,11 +115,6 @@ osSemaphoreId_t Sem_LEDHandle;
 const osSemaphoreAttr_t Sem_LED_attributes = {
   .name = "Sem_LED"
 };
-/* Definitions for Sem_Pc */
-osSemaphoreId_t Sem_PcHandle;
-const osSemaphoreAttr_t Sem_Pc_attributes = {
-  .name = "Sem_Pc"
-};
 /* Definitions for Sem_Dcc */
 osSemaphoreId_t Sem_DccHandle;
 const osSemaphoreAttr_t Sem_Dcc_attributes = {
@@ -128,6 +125,11 @@ osSemaphoreId_t Sem_TaskChangeHandle;
 const osSemaphoreAttr_t Sem_TaskChange_attributes = {
   .name = "Sem_TaskChange"
 };
+/* Definitions for Sem_Init */
+osSemaphoreId_t Sem_InitHandle;
+const osSemaphoreAttr_t Sem_Init_attributes = {
+  .name = "Sem_Init"
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -137,11 +139,11 @@ const osSemaphoreAttr_t Sem_TaskChange_attributes = {
 void StartDefaultTask(void *argument);
 extern void StartGpioTask(void *argument);
 extern void StartKeyTask(void *argument);
-extern void StartPcTask(void *argument);
 extern void StartOledTask(void *argument);
 extern void StartTestTask(void *argument);
 extern void StartStepperTask(void *argument);
 extern void StartDccTask(void *argument);
+extern void StartInitTask(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -166,14 +168,14 @@ void MX_FREERTOS_Init(void) {
   /* creation of Sem_LED */
   Sem_LEDHandle = osSemaphoreNew(1, 0, &Sem_LED_attributes);
 
-  /* creation of Sem_Pc */
-  Sem_PcHandle = osSemaphoreNew(1, 0, &Sem_Pc_attributes);
-
   /* creation of Sem_Dcc */
   Sem_DccHandle = osSemaphoreNew(1, 0, &Sem_Dcc_attributes);
 
   /* creation of Sem_TaskChange */
   Sem_TaskChangeHandle = osSemaphoreNew(1, 0, &Sem_TaskChange_attributes);
+
+  /* creation of Sem_Init */
+  Sem_InitHandle = osSemaphoreNew(1, 0, &Sem_Init_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -197,9 +199,6 @@ void MX_FREERTOS_Init(void) {
   /* creation of KeyTask */
   KeyTaskHandle = osThreadNew(StartKeyTask, NULL, &KeyTask_attributes);
 
-  /* creation of PcTask */
-  PcTaskHandle = osThreadNew(StartPcTask, NULL, &PcTask_attributes);
-
   /* creation of OledTask */
   OledTaskHandle = osThreadNew(StartOledTask, NULL, &OledTask_attributes);
 
@@ -211,6 +210,9 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of DccTask */
   DccTaskHandle = osThreadNew(StartDccTask, NULL, &DccTask_attributes);
+
+  /* creation of InitTask */
+  InitTaskHandle = osThreadNew(StartInitTask, NULL, &InitTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -232,6 +234,12 @@ void MX_FREERTOS_Init(void) {
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN StartDefaultTask */
+  /*
+   * 统一启动门控：
+   * 默认任务通常最先被调度到，先在此等待可确保系统“初始化先于业务任务”。
+   * InitTask 释放 Sem_Init 后，该门控会保持常开状态。
+   */
+  task_wait_init_done();
   /* Infinite loop */
   for(;;)
   {

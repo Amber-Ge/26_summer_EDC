@@ -47,8 +47,8 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
         Code/01_Task/Src/task_dcc.c
         Code/01_Task/Src/task_gpio.c
+        Code/01_Task/Src/task_init.c
         Code/01_Task/Src/task_key.c
-        Code/01_Task/Src/task_pc.c
         Code/01_Task/Src/task_oled.c
         Code/01_Task/Src/task_test.c
         Code/01_Task/Src/task_stepper.c

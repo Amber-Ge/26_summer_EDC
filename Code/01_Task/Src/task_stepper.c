@@ -1,4 +1,5 @@
 #include "task_stepper.h"
+#include "task_init.h"
 #include "mod_vofa.h"
 #include <string.h>
 
@@ -311,6 +312,13 @@ void StartStepperTask(void *argument)
     task_stepper_channel_t *ch;
 
     (void)argument;
+    /*
+     * 启动门控说明：
+     * 步进电机任务虽然自身有独立 UART 绑定流程，但仍依赖全局启动顺序稳定。
+     * 在 InitTask 未完成前先阻塞，确保系统中其他基础模块已完成上电初始化，
+     * 避免多任务并发启动导致时序抖动或调试期偶发异常。
+     */
+    task_wait_init_done();
 
 #if (TASK_STEPPER_STARTUP_ENABLE == 0U)
     /* 关闭开关时任务自挂起，不占用调度 */

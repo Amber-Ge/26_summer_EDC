@@ -1,56 +1,30 @@
 #include "task_gpio.h"
+#include "task_init.h"
 
-/* LED硬件绑定表：任务启动时显式绑定到模块层 */
-static const mod_led_hw_cfg_t s_led_bind_map[LED_MAX] =
-{
-    [LED_RED] = {
-        .port = LED_RED_GPIO_Port,
-        .pin = LED_RED_Pin,
-        .active_level = GPIO_LEVEL_LOW,
-    },
-    [LED_GREEN] = {
-        .port = LED_GREEN_GPIO_Port,
-        .pin = LED_GREEN_Pin,
-        .active_level = GPIO_LEVEL_LOW,
-    },
-    [LED_YELLOW] = {
-        .port = LED_YELLOW_GPIO_Port,
-        .pin = LED_YELLOW_Pin,
-        .active_level = GPIO_LEVEL_LOW,
-    },
-};
-
-/* 继电器硬件绑定表：任务启动时显式绑定到模块层 */
-static const mod_relay_hw_cfg_t s_relay_bind_map[RELAY_MAX] =
-{
-    [RELAY_LASER] = {
-        .port = Laser_GPIO_Port,
-        .pin = Laser_Pin,
-        .active_level = GPIO_LEVEL_HIGH,
-    },
-};
-
+/**
+ * @brief GPIO 业务任务入口。
+ *
+ * @details
+ * 本任务已经不再承担硬件绑定与初始化职责（已解耦到 InitTask）：
+ * 1. 启动后先等待全局初始化完成。
+ * 2. 再进入“等待信号量 -> 执行动作序列”的业务循环。
+ *
+ * 当前动作序列：
+ * - 收到 Sem_LED 后，翻转红灯 -> 延时 500ms -> 翻转绿灯。
+ */
 void StartGpioTask(void *argument)
 {
     (void)argument;
 
-    // 1. 显式绑定LED映射（无默认回落）。
-    (void)mod_led_bind_map(s_led_bind_map, LED_MAX);
+    /* 统一启动门控：确保 LED/Relay 模块已在 InitTask 中完成初始化。 */
+    task_wait_init_done();
 
-    // 2. 显式绑定继电器映射（无默认回落）。
-    (void)mod_relay_bind_map(s_relay_bind_map, RELAY_MAX);
-
-    // 3. 初始化模块，确保上电状态可控。
-    mod_led_Init();
-    mod_relay_init();
-
-    // 4. 主循环：等待触发信号并执行动作。
     for (;;)
     {
-        // 4.1 阻塞等待触发信号。
-        osSemaphoreAcquire(Sem_LEDHandle, osWaitForever);
+        /* 阻塞等待外部触发（例如按键任务释放 Sem_LED）。 */
+        (void)osSemaphoreAcquire(Sem_LEDHandle, osWaitForever);
 
-        // 4.2 执行动作序列：红灯翻转 -> 延时 -> 绿灯翻转。
+        /* 执行一次可视化动作序列。 */
         mod_led_toggle(LED_RED);
         osDelay(500U);
         mod_led_toggle(LED_GREEN);
