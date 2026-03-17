@@ -1,38 +1,56 @@
 /**
  ******************************************************************************
  * @file    mod_battery.h
- * @brief   电池电压模块接口定义
+ * @brief   电池电压模块接口
  * @details
- * 基于 ADC 原始值完成电压换算，并缓存最近一次有效电压值供上层读取。
+ * 1. 模块层只负责电压业务换算：ADC原始值 -> 实际电池电压。
+ * 2. 模块层不再提供默认硬件回落，必须先显式绑定ADC句柄。
  ******************************************************************************
  */
 #ifndef FINAL_GRADUATE_WORK_MOD_BATTERY_H
-#define FINAL_GRADUATE_WORK_MOD_BATTERY_H // 头文件防重复包含宏
+#define FINAL_GRADUATE_WORK_MOD_BATTERY_H
 
-#include "drv_adc.h"
+#include <stdbool.h>
+#include "main.h"
 
-/** ADC 参考电压（V） */
-#define MOD_BATTERY_ADC_REF_V    (3.3f) // ADC 参考电压，单位 V
-/** 12 位 ADC 最大量化值 */
-#define MOD_BATTERY_ADC_RES      (4095.0f) // 12位 ADC 满量程计数
-/** 电压分压换算比例 */
-#define MOD_BATTERY_VOL_RATIO    (10) // 电压分压换算比例
-/** 平均采样次数 */
-#define MOD_BATTERY_CNT          (10U) // 电压采样平均次数
+/* ADC参考电压（单位：V） */
+#define MOD_BATTERY_ADC_REF_V    (3.3f)
+/* 12位ADC满量程 */
+#define MOD_BATTERY_ADC_RES      (4095.0f)
+/* 电阻分压还原系数 */
+#define MOD_BATTERY_VOL_RATIO    (10)
+/* 单次更新时的平均采样次数 */
+#define MOD_BATTERY_CNT          (10U)
 
 /**
- * @brief 更新一次电池电压缓存值。
- * @details
- * 函数内部会进行多次 ADC 采样取平均，并执行分压比例换算。
- *
- * @return true 更新成功。
- * @return false 采样失败或换算流程异常。
+ * @brief 绑定电池模块使用的ADC句柄
+ * @param hadc ADC句柄指针
+ * @return true  绑定成功
+ * @return false 绑定失败（hadc为空）
+ */
+bool mod_battery_bind_adc(ADC_HandleTypeDef *hadc);
+
+/**
+ * @brief 解绑电池模块当前ADC句柄
+ */
+void mod_battery_unbind_adc(void);
+
+/**
+ * @brief 查询电池模块是否已完成ADC绑定
+ * @return true 已绑定
+ * @return false 未绑定
+ */
+bool mod_battery_is_bound(void);
+
+/**
+ * @brief 更新一次电池电压缓存值
+ * @return true  更新成功
+ * @return false 更新失败（未绑定或采样失败）
  */
 bool mod_battery_update(void);
 
 /**
- * @brief 获取当前缓存的电池电压值。
- * @return float 电池电压值（单位 V）。
+ * @brief 获取当前缓存的电池电压值（单位：V）
  */
 float mod_battery_get_voltage(void);
 

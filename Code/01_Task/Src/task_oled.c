@@ -1,5 +1,7 @@
-﻿#include "task_oled.h"
+#include "task_oled.h"
 #include "mod_oled.h"
+#include "adc.h"
+#include "i2c.h"
 
 /**
  * @brief  内部时间比对函数：判断目标时间戳是否到达
@@ -16,70 +18,81 @@ static uint8_t task_oled_time_reached(uint32_t now, uint32_t target)
 void StartOledTask(void *argument)
 {
     /* --- 变量定义：时间计算相关 --- */
-    uint32_t tick_freq;         // 系统内核的 Tick 频率 (1秒包含多少个Tick，通常1s有1000个tick)
-    uint32_t oled_period_tick;   // 换算成 Tick 的屏幕刷新周期
-    uint32_t sample_period_tick; // 换算成 Tick 的电池采样周期
-    uint32_t next_oled_tick;     // 存储下一次刷屏的具体时间点
-    uint32_t next_sample_tick;   // 存储下一次采样的具体时间点
+    uint32_t tick_freq;          // 系统内核 Tick 频率
+    uint32_t oled_period_tick;   // OLED刷新周期（Tick）
+    uint32_t sample_period_tick; // 电池采样周期（Tick）
+    uint32_t next_oled_tick;     // 下一次刷屏时刻
+    uint32_t next_sample_tick;   // 下一次采样时刻
 
     /* --- 变量定义：数据处理相关 --- */
-    float latest_voltage = 0.0f; // 缓存从电池模块读取的最新的电压值
-    char voltage_label[] = "voltage:"; // 屏幕显示的固定文本
+    float latest_voltage = 0.0f;       // 最近一次有效电池电压
+    char voltage_label[] = "voltage:"; // 屏幕固定标签
 
     (void)argument; // 显式声明参数未使用，避免编译器警告
 
-    /* 1. 获取系统频率（通常为 1000Hz）并计算周期对应的 Tick 数 */
+    /* 0. 强制显式绑定：无默认回落，必须先绑定才能工作 */
+    (void)OLED_BindI2C(&hi2c2, OLED_I2C_ADDR_DEFAULT, OLED_I2C_TIMEOUT_MS_DEFAULT);
+    (void)mod_battery_bind_adc(&hadc1);
+
+    /* 1. 获取系统频率并计算周期对应Tick数 */
     tick_freq = osKernelGetTickFreq();
     if (tick_freq == 0U)
+    {
         tick_freq = 1000U;
+    }
 
     oled_period_tick = TASK_OLED_REFRESH_S * tick_freq;
     sample_period_tick = TASK_OLED_SAMPLE_S * tick_freq;
 
-    /* 2. 防御性编程：确保周期至少为 1，防止除零或死循环 */
+    /* 2. 防御性处理：周期至少为1Tick */
     if (oled_period_tick == 0U)
+    {
         oled_period_tick = 1U;
+    }
     if (sample_period_tick == 0U)
+    {
         sample_period_tick = 1U;
+    }
 
-    /* 3. 硬件与数据初始化 */
+    /* 3. 初始化OLED并更新一次电池缓存 */
     OLED_Init();
-
-    if (mod_battery_update()) // 初始更新一次电池数据
+    if (mod_battery_update())
+    {
         latest_voltage = mod_battery_get_voltage();
+    }
 
-    /* 4. 设定任务运行的初始时间戳起点 */
+    /* 4. 初始化调度时间轴 */
     next_oled_tick = osKernelGetTickCount();
     next_sample_tick = next_oled_tick + sample_period_tick;
 
-    /* 5. 任务主循环 */
+    /* 5. 主循环 */
     for (;;)
     {
-        uint32_t now_tick = osKernelGetTickCount(); // 获取当前时刻
+        uint32_t now_tick = osKernelGetTickCount();
 
-        /* --- 逻辑板块 A: 电池采样 (每 5 秒触发一次) --- */
+        /* 5.1 周期采样电池电压 */
         if (task_oled_time_reached(now_tick, next_sample_tick))
         {
-            if (mod_battery_update()) // 从 ADC 读取最新电压
+            if (mod_battery_update())
+            {
                 latest_voltage = mod_battery_get_voltage();
+            }
 
-            // 更新下一次采样的时间轴
             next_sample_tick += sample_period_tick;
-
-            // 补偿逻辑：如果系统发生卡顿导致错过多次，循环将时间轴对齐到未来
             while (task_oled_time_reached(now_tick, next_sample_tick))
+            {
                 next_sample_tick += sample_period_tick;
+            }
         }
 
-        /* --- 逻辑板块 B: OLED 刷新 (每 1 秒触发一次) --- */
+        /* 5.2 周期刷新OLED显示 */
         if (task_oled_time_reached(now_tick, next_oled_tick))
         {
-            OLED_Clear(); // 清空显存缓冲区
-            OLED_ShowString(0U, 0U, voltage_label, OLED_8X16); // 画出 "voltage:" 标签
-            OLED_ShowFloatNum(0U, 16U, latest_voltage, 2U, 2U, OLED_8X16); // 画出电压数值
-            OLED_Update(); // 将缓冲区数据一次性通过 I2C 发送给屏幕
+            OLED_Clear();
+            OLED_ShowString(0U, 0U, voltage_label, OLED_8X16);
+            OLED_ShowFloatNum(0U, 16U, latest_voltage, 2U, 2U, OLED_8X16);
+            OLED_Update();
 
-            // 更新下一次刷屏的时间轴
             next_oled_tick += oled_period_tick;
             while (task_oled_time_reached(now_tick, next_oled_tick))
             {
@@ -87,8 +100,7 @@ void StartOledTask(void *argument)
             }
         }
 
-        /* --- 逻辑板块 C: 任务延时 --- */
-        /* 让出 CPU 使用权 200 个 Tick，允许其他低优先级任务运行，降低系统功耗 */
+        /* 5.3 让出CPU */
         osDelay(TASK_OLED_IDLE_DELAY_TICK);
     }
 }

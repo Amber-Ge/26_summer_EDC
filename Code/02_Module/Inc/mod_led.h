@@ -1,47 +1,43 @@
 /**
  ******************************************************************************
  * @file    mod_led.h
- * @brief   LED 模块接口定义
+ * @brief   LED模块接口
+ * @details
+ * 1. 模块层负责LED逻辑ID到GPIO资源的映射。
+ * 2. 模块不再提供默认映射，必须先显式绑定。
  ******************************************************************************
  */
 #ifndef FINAL_GRADUATE_WORK_MOD_LED_H
-#define FINAL_GRADUATE_WORK_MOD_LED_H // 头文件防重复包含宏
+#define FINAL_GRADUATE_WORK_MOD_LED_H
+
+#include <stdbool.h>
+#include <stdint.h>
 
 #include "drv_gpio.h"
 
-/**
- * @brief LED 编号枚举。
- */
 typedef enum
 {
-    LED_RED = 0, // 红色LED
-    LED_GREEN, // 绿色LED
-    LED_YELLOW, // 黄色LED
-    LED_MAX // LED数量上限
+    LED_RED = 0,
+    LED_GREEN,
+    LED_YELLOW,
+    LED_MAX
 } mod_led_id_e;
 
-/**
- * @brief 初始化 LED 模块。
- * @details 上电后默认关闭全部 LED。
- */
+/** 单路LED硬件绑定配置 */
+typedef struct
+{
+    GPIO_TypeDef *port;
+    uint16_t pin;
+    gpio_level_e active_level;
+} mod_led_hw_cfg_t;
+
+bool mod_led_bind_map(const mod_led_hw_cfg_t *map, uint8_t map_num);
+void mod_led_unbind_map(void);
+bool mod_led_is_bound(void);
+
 void mod_led_Init(void);
-
-/**
- * @brief 点亮指定 LED。
- * @param led LED 编号。
- */
 void mod_led_on(mod_led_id_e led);
-
-/**
- * @brief 熄灭指定 LED。
- * @param led LED 编号。
- */
 void mod_led_off(mod_led_id_e led);
-
-/**
- * @brief 翻转指定 LED 状态。
- * @param led LED 编号。
- */
 void mod_led_toggle(mod_led_id_e led);
 
-#endif
+#endif /* FINAL_GRADUATE_WORK_MOD_LED_H */

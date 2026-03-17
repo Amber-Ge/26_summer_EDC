@@ -1,62 +1,142 @@
 #include "mod_led.h"
 
-static GPIO_TypeDef* LED_PORT[LED_MAX] =
-{
-    LED_RED_GPIO_Port,
-    LED_GREEN_GPIO_Port,
-    LED_YELLOW_GPIO_Port
-}; // LED 端口映射表：逻辑 ID -> GPIO 端口
+#include <string.h>
 
-static uint16_t LED_PIN[LED_MAX] =
-{
-    LED_RED_Pin,    // RED
-    LED_GREEN_Pin,  // GREEN
-    LED_YELLOW_Pin  // YELLOW
-}; // LED 引脚映射表：逻辑 ID -> GPIO 引脚
+/* 当前生效的LED映射表 */
+static mod_led_hw_cfg_t s_led_cfg_active[LED_MAX];
+/* LED模块绑定状态 */
+static bool s_led_cfg_bound = false;
 
 /**
- * @brief 初始化 LED (硬件连接为低电平点亮)
+ * @brief 校验LED ID是否合法
  */
+static bool is_valid_led_id(mod_led_id_e led)
+{
+    return ((led >= LED_RED) && (led < LED_MAX));
+}
+
+/**
+ * @brief 电平取反工具函数
+ */
+static gpio_level_e invert_level(gpio_level_e level)
+{
+    return (level == GPIO_LEVEL_LOW) ? GPIO_LEVEL_HIGH : GPIO_LEVEL_LOW;
+}
+
+/**
+ * @brief 校验单个LED映射项
+ */
+static bool mod_led_check_item(const mod_led_hw_cfg_t *item)
+{
+    if (item == NULL)
+    {
+        return false;
+    }
+
+    if (item->port == NULL)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool mod_led_bind_map(const mod_led_hw_cfg_t *map, uint8_t map_num)
+{
+    // 1. 基础参数校验。
+    if ((map == NULL) || (map_num != LED_MAX))
+    {
+        return false;
+    }
+
+    // 2. 逐项校验映射内容。
+    for (uint8_t i = 0U; i < LED_MAX; i++)
+    {
+        if (!mod_led_check_item(&map[i]))
+        {
+            return false;
+        }
+    }
+
+    // 3. 保存映射并标记绑定成功。
+    memcpy(s_led_cfg_active, map, sizeof(s_led_cfg_active));
+    s_led_cfg_bound = true;
+
+    return true;
+}
+
+void mod_led_unbind_map(void)
+{
+    s_led_cfg_bound = false;
+}
+
+bool mod_led_is_bound(void)
+{
+    return s_led_cfg_bound;
+}
+
 void mod_led_Init(void)
 {
-    //1. 初始化时统一关闭全部 LED，确保上电状态可控
-    mod_led_off(LED_RED);
-    mod_led_off(LED_GREEN);
-    mod_led_off(LED_YELLOW);
+    // 1. 未绑定时直接返回，避免错误访问GPIO资源。
+    if (!mod_led_is_bound())
+    {
+        return;
+    }
+
+    // 2. 初始化时关闭全部LED，保证上电状态可控。
+    for (uint8_t i = 0U; i < LED_MAX; i++)
+    {
+        mod_led_off((mod_led_id_e)i);
+    }
 }
 
-/**
- * @brief 点亮 LED (硬件连接为低电平点亮)
- */
 void mod_led_on(mod_led_id_e led)
 {
-    //1. 参数校验：非法 LED ID 直接返回
-    if (led >= LED_MAX) return;
+    const mod_led_hw_cfg_t *cfg;
 
-    //2. 调用驱动层接口输出低电平（本硬件为低电平点亮）
-    drv_gpio_write(LED_PORT[led], LED_PIN[led], GPIO_LEVEL_LOW);
+    // 1. 参数和绑定状态检查。
+    if (!is_valid_led_id(led) || !mod_led_is_bound())
+    {
+        return;
+    }
+
+    // 2. 取出映射配置。
+    cfg = &s_led_cfg_active[led];
+
+    // 3. 输出有效电平，点亮LED。
+    drv_gpio_write(cfg->port, cfg->pin, cfg->active_level);
 }
 
-/**
- * @brief 关闭 LED
- */
 void mod_led_off(mod_led_id_e led)
 {
-    //1. 参数校验：非法 LED ID 直接返回
-    if (led >= LED_MAX) return;
+    const mod_led_hw_cfg_t *cfg;
 
-    //2. 调用驱动层接口输出高电平（本硬件为高电平熄灭）
-    drv_gpio_write(LED_PORT[led], LED_PIN[led], GPIO_LEVEL_HIGH);
+    // 1. 参数和绑定状态检查。
+    if (!is_valid_led_id(led) || !mod_led_is_bound())
+    {
+        return;
+    }
+
+    // 2. 取出映射配置。
+    cfg = &s_led_cfg_active[led];
+
+    // 3. 输出反相电平，熄灭LED。
+    drv_gpio_write(cfg->port, cfg->pin, invert_level(cfg->active_level));
 }
 
-/**
- * @brief 翻转 LED 状态
- */
 void mod_led_toggle(mod_led_id_e led)
 {
-    //1. 参数校验：非法 LED ID 直接返回
-    if (led >= LED_MAX) return;
+    const mod_led_hw_cfg_t *cfg;
 
-    //2. 调用驱动层翻转当前 LED 电平状态
-    drv_gpio_toggle(LED_PORT[led], LED_PIN[led]);
+    // 1. 参数和绑定状态检查。
+    if (!is_valid_led_id(led) || !mod_led_is_bound())
+    {
+        return;
+    }
+
+    // 2. 取出映射配置。
+    cfg = &s_led_cfg_active[led];
+
+    // 3. 翻转当前电平。
+    drv_gpio_toggle(cfg->port, cfg->pin);
 }
