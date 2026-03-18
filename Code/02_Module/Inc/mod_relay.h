@@ -17,7 +17,8 @@
 
 typedef enum
 {
-    RELAY_LASER = 0,
+    RELAY_LASER = 0, // 激光输出逻辑ID
+    RELAY_BUZZER,    // 蜂鸣器输出逻辑ID
     RELAY_MAX
 } mod_relay_id_e;
 

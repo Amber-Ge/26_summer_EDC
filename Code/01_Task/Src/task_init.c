@@ -60,6 +60,11 @@ static const mod_relay_hw_cfg_t s_relay_bind_map[RELAY_MAX] =
         .pin = Laser_Pin,
         .active_level = GPIO_LEVEL_HIGH,
     },
+    [RELAY_BUZZER] = {
+        .port = Buzzer_GPIO_Port,
+        .pin = Buzzer_Pin,
+        .active_level = GPIO_LEVEL_HIGH,
+    },
 };
 
 /* ========================= 硬件绑定表：底盘双电机 ========================= */

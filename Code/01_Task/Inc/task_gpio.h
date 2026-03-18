@@ -13,6 +13,9 @@
 #include "mod_led.h"
 #include "mod_relay.h"
 
+/** 蜂鸣器单次提示音时长（单位：ms） */
+#define TASK_GPIO_BUZZER_BEEP_MS (80U)
+
 /**
  * @brief GPIO 任务入口函数。
  * @details

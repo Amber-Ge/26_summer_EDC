@@ -55,7 +55,7 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOE, Laser_Pin|AIN2_Pin|BIN2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOE, Laser_Pin|Buzzer_Pin|AIN2_Pin|BIN2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOF, LED_RED_Pin|LED_GREEN_Pin|LED_YELLOW_Pin, GPIO_PIN_RESET);
@@ -63,10 +63,10 @@ void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOE, AIN1_Pin|BIN1_Pin, GPIO_PIN_SET);
 
-  /*Configure GPIO pins : Laser_Pin AIN1_Pin AIN2_Pin BIN1_Pin
-                           BIN2_Pin */
-  GPIO_InitStruct.Pin = Laser_Pin|AIN1_Pin|AIN2_Pin|BIN1_Pin
-                          |BIN2_Pin;
+  /*Configure GPIO pins : Laser_Pin Buzzer_Pin AIN1_Pin AIN2_Pin
+                           BIN1_Pin BIN2_Pin */
+  GPIO_InitStruct.Pin = Laser_Pin|Buzzer_Pin|AIN1_Pin|AIN2_Pin
+                          |BIN1_Pin|BIN2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;

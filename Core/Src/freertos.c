@@ -130,6 +130,11 @@ osSemaphoreId_t Sem_InitHandle;
 const osSemaphoreAttr_t Sem_Init_attributes = {
   .name = "Sem_Init"
 };
+/* Definitions for Sem_ReadyToggle */
+osSemaphoreId_t Sem_ReadyToggleHandle;
+const osSemaphoreAttr_t Sem_ReadyToggle_attributes = {
+  .name = "Sem_ReadyToggle"
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -176,6 +181,9 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of Sem_Init */
   Sem_InitHandle = osSemaphoreNew(1, 0, &Sem_Init_attributes);
+
+  /* creation of Sem_ReadyToggle */
+  Sem_ReadyToggleHandle = osSemaphoreNew(1, 0, &Sem_ReadyToggle_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
