@@ -9,6 +9,7 @@
 #include "mod_relay.h"
 #include "mod_sensor.h"
 #include "mod_vofa.h"
+#include "mod_k230.h"
 #include <string.h>
 
 /**
@@ -164,6 +165,50 @@ static void task_init_vofa_bind(void)
     }
 }
 
+/**
+ * @brief 在 InitTask 中完成 K230 协议层与串口资源绑定。
+ *
+ * @details
+ * 设计说明（与当前“解耦版 mod_k230”接口保持一致）：
+ * 1. 本函数只负责“装配（bind）”，不写入任何业务逻辑。
+ * 2. K230 采用 ctx + bind 模型，InitTask 作为系统装配层注入硬件资源。
+ * 3. 绑定信息包括：
+ *    - UART：huart4（当前工程中 VOFA 使用 huart3，Stepper 使用 huart5/huart2，
+ *      因此此处选用未占用的 huart4，避免 UART ownership 冲突）。
+ *    - 校验算法：MOD_K230_CHECKSUM_XOR（当前模块唯一已实现算法）。
+ *    - 通知信号量：不绑定（sem_count = 0），后续若有消费者任务可再动态追加。
+ *    - 发送互斥锁：不绑定（tx_mutex = NULL），保持最小耦合。
+ *
+ * 4. 初始化策略与 VOFA 保持一致：
+ *    - 若默认 ctx 尚未 init，则执行 ctx_init(ctx, &bind)；
+ *    - 若已 init，则执行 rebind(ctx, &bind)。
+ *
+ * 5. 无论绑定成功与否，InitTask 都继续执行后续流程，不在这里阻塞系统启动。
+ *    错误处理由模块内部“返回值 + 资源回滚”保证安全性。
+ */
+static void task_init_k230_bind(void)
+{
+    mod_k230_ctx_t *k230_ctx;
+    mod_k230_bind_t k230_bind;
+
+    k230_ctx = mod_k230_get_default_ctx();
+    memset(&k230_bind, 0, sizeof(k230_bind));
+
+    k230_bind.huart = &huart4;
+    k230_bind.sem_count = 0U;
+    k230_bind.tx_mutex = NULL;
+    k230_bind.checksum_algo = MOD_K230_CHECKSUM_XOR;
+
+    if (!k230_ctx->inited)
+    {
+        (void)mod_k230_ctx_init(k230_ctx, &k230_bind);
+    }
+    else
+    {
+        (void)mod_k230_bind(k230_ctx, &k230_bind);
+    }
+}
+
 void task_wait_init_done(void)
 {
     if (Sem_InitHandle == NULL)
@@ -186,6 +231,7 @@ void StartInitTask(void *argument)
 
     /* 在初始化任务中完成 VOFA 串口绑定，替代原 PcTask 的绑定职责。 */
     task_init_vofa_bind();
+    task_init_k230_bind();
 
     if (Sem_InitHandle != NULL)
     {

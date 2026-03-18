@@ -1,121 +1,245 @@
 /**
  ******************************************************************************
  * @file    mod_k230.h
- * @brief   K230 串口协议模块接口定义
+ * @brief   K230 协议层模块（解耦版）接口定义
  * @details
- * 提供 K230 通信的 UART 绑定、DMA 收发、环形缓冲区读取和协议帧解析能力。
+ * 设计目标：
+ * 1. 将“硬件绑定”从协议实现中分离，统一通过 bind 结构注入 UART/互斥锁/信号量。
+ * 2. 将“协议校验策略”显式化，允许在绑定阶段选择校验算法。
+ * 3. 保持协议层职责单一：仅处理 K230 帧收发与解析，不承担任务编排逻辑。
+ *
+ * 注意：
+ * - 本文件已移除旧版全局单例风格接口（init/deinit/无 ctx API）。
+ * - 使用者需要显式创建或获取 context，再进行 ctx_init + bind。
  ******************************************************************************
  */
 #ifndef FINAL_GRADUATE_WORK_MOD_K230_H
-#define FINAL_GRADUATE_WORK_MOD_K230_H // 头文件防重复包含宏
+#define FINAL_GRADUATE_WORK_MOD_K230_H
 
 #include "drv_uart.h"
 #include "cmsis_os2.h"
 #include <stdbool.h>
 #include <stdint.h>
 
-#define MOD_K230_RX_DMA_BUF_SIZE      (256U) // DMA接收缓冲区大小，单位字节
-#define MOD_K230_RX_RING_BUF_SIZE     (1024U) // 环形接收缓冲区大小，单位字节
-#define MOD_K230_TX_BUF_SIZE          (512U) // 发送缓冲区大小，单位字节
-#define MOD_K230_MAX_BIND_SEM         (4U) // 最大绑定信号量个数
-#define MOD_K230_TX_MUTEX_TIMEOUT_MS  (5U) // 发送互斥锁超时，单位 ms
+/* ========================= 资源规模配置 ========================= */
+/* DMA 一次性接收缓冲。该缓冲会在 RX 回调中批量搬运到软件环形缓冲。 */
+#define MOD_K230_RX_DMA_BUF_SIZE      (256U)
+/* 协议层软件环形缓冲。用于吸收上层处理速度抖动。 */
+#define MOD_K230_RX_RING_BUF_SIZE     (1024U)
+/* 发送缓冲。避免 DMA 直接引用调用者栈内存。 */
+#define MOD_K230_TX_BUF_SIZE          (512U)
+/* 允许绑定的最大事件信号量数量。 */
+#define MOD_K230_MAX_BIND_SEM         (4U)
+/* 发送互斥锁的获取超时（毫秒）。 */
+#define MOD_K230_TX_MUTEX_TIMEOUT_MS  (5U)
+/* K230 当前固定协议帧长度（字节）。 */
+#define MOD_K230_PROTO_FRAME_SIZE     (12U)
 
 /**
- * @brief K230 协议帧解析结果结构体。
+ * @brief K230 帧校验算法枚举。
+ * @details
+ * 当前仅实现 XOR，但接口层已开放“可选算法”语义，
+ * 后续扩展 CRC8/CRC16 时无需再改动 bind 架构。
+ */
+typedef enum
+{
+    MOD_K230_CHECKSUM_XOR = 0U, /**< XOR 校验（当前唯一已实现算法） */
+    MOD_K230_CHECKSUM_MAX
+} mod_k230_checksum_algo_t;
+
+/**
+ * @brief K230 协议帧解码结果。
  */
 typedef struct
 {
-    uint8_t motor1_id; // 帧中电机1标识
-    int16_t err1; // 电机1误差值
-    uint8_t motor2_id; // 帧中电机2标识
-    int16_t err2; // 电机2误差值
+    uint8_t motor1_id; /**< 协议帧中的电机1 ID 字段 */
+    int16_t err1;      /**< 协议帧中的电机1误差字段（高字节在前） */
+    uint8_t motor2_id; /**< 协议帧中的电机2 ID 字段 */
+    int16_t err2;      /**< 协议帧中的电机2误差字段（高字节在前） */
 } mod_k230_frame_data_t;
 
 /**
- * @brief 初始化 K230 模块并绑定 UART。
- * @param huart UART 句柄指针。
- */
-void mod_k230_init(UART_HandleTypeDef *huart);
-
-/**
- * @brief 反初始化 K230 模块并释放资源。
- */
-void mod_k230_deinit(void);
-
-/**
- * @brief 绑定一个事件信号量。
+ * @brief K230 绑定参数（硬件+OS 资源+校验策略）。
  * @details
- * 当模块收到数据并完成处理后，会释放已绑定的信号量。
+ * 这是“协议层输入契约”：
+ * - huart / tx_mutex / sem_list 来源于系统装配层（例如 task_init）
+ * - checksum_algo 决定帧合法性判定方式
+ */
+typedef struct
+{
+    UART_HandleTypeDef *huart;                         /**< 绑定的 UART 句柄，必填 */
+    osSemaphoreId_t sem_list[MOD_K230_MAX_BIND_SEM];  /**< 数据到达通知信号量列表 */
+    uint8_t sem_count;                                 /**< sem_list 有效数量 */
+    osMutexId_t tx_mutex;                              /**< 发送互斥锁，可为 NULL */
+    mod_k230_checksum_algo_t checksum_algo;            /**< 帧校验算法选择 */
+} mod_k230_bind_t;
+
+/**
+ * @brief K230 运行上下文（每个上下文对应一个协议实例）。
+ * @details
+ * 该结构体既包含绑定信息，也包含协议运行态缓存；
+ * 如需多实例，可创建多个 ctx，并分别绑定不同 UART。
+ */
+typedef struct
+{
+    bool inited;                                       /**< 上下文是否完成初始化 */
+    bool bound;                                        /**< 上下文是否已完成 UART 绑定 */
+    mod_k230_bind_t bind;                              /**< 当前生效的绑定配置 */
+
+    uint8_t rx_dma_buf[MOD_K230_RX_DMA_BUF_SIZE];      /**< DMA 接收暂存缓冲 */
+    uint8_t rx_ring_buf[MOD_K230_RX_RING_BUF_SIZE];    /**< 软件环形接收缓冲 */
+    volatile uint16_t rx_head;                         /**< 环形缓冲写指针 */
+    volatile uint16_t rx_tail;                         /**< 环形缓冲读指针 */
+
+    uint8_t tx_buf[MOD_K230_TX_BUF_SIZE];              /**< DMA 发送缓冲 */
+
+    uint8_t parse_buf[MOD_K230_PROTO_FRAME_SIZE];      /**< 帧解析状态机缓存 */
+    uint8_t parse_len;                                 /**< 当前 parse_buf 已填充长度 */
+} mod_k230_ctx_t;
+
+/* ========================= Context 生命周期 ========================= */
+
+/**
+ * @brief 获取模块内置默认上下文。
+ * @return mod_k230_ctx_t* 默认上下文地址。
+ */
+mod_k230_ctx_t *mod_k230_get_default_ctx(void);
+
+/**
+ * @brief 初始化上下文；可选同时完成绑定。
+ * @param ctx 目标上下文。
+ * @param bind 可选绑定参数；传 NULL 表示仅初始化，不立即绑定。
+ * @return true 成功。
+ * @return false 失败（参数非法或绑定失败）。
+ */
+bool mod_k230_ctx_init(mod_k230_ctx_t *ctx, const mod_k230_bind_t *bind);
+
+/**
+ * @brief 反初始化上下文并释放绑定资源。
+ * @param ctx 目标上下文。
+ */
+void mod_k230_ctx_deinit(mod_k230_ctx_t *ctx);
+
+/**
+ * @brief 将上下文绑定到指定硬件与策略。
+ * @details
+ * 若 ctx 当前已绑定，会先执行 unbind，再按新 bind 重新建立。
  *
- * @param sem_id 待绑定信号量句柄。
+ * @param ctx 目标上下文。
+ * @param bind 绑定参数（huart 必填，算法必须受支持）。
  * @return true 绑定成功。
- * @return false 绑定失败（重复、容量满或参数无效）。
+ * @return false 绑定失败。
  */
-bool mod_k230_bind_semaphore(osSemaphoreId_t sem_id);
+bool mod_k230_bind(mod_k230_ctx_t *ctx, const mod_k230_bind_t *bind);
 
 /**
- * @brief 解绑一个事件信号量。
- * @param sem_id 待解绑信号量句柄。
- * @return true 解绑成功。
- * @return false 解绑失败（未找到或参数无效）。
+ * @brief 解除上下文绑定，停止 DMA 并释放 UART 归属权。
+ * @param ctx 目标上下文。
  */
-bool mod_k230_unbind_semaphore(osSemaphoreId_t sem_id);
+void mod_k230_unbind(mod_k230_ctx_t *ctx);
 
 /**
- * @brief 清空全部已绑定信号量。
+ * @brief 查询上下文是否处于可工作状态（inited + bound + huart 有效）。
+ * @param ctx 目标上下文。
+ * @return true 已就绪。
+ * @return false 未就绪。
  */
-void mod_k230_clear_semaphores(void);
+bool mod_k230_is_bound(const mod_k230_ctx_t *ctx);
+
+/* ========================= 绑定配置动态调整 ========================= */
 
 /**
- * @brief 发送原始字节数据。
- * @details
- * 数据会先拷贝到模块内部缓冲区，再通过 DMA 启动发送。
- *
- * @param data 待发送数据首地址。
- * @param len 待发送长度（字节）。
- * @return true 发送启动成功。
- * @return false 参数无效或发送启动失败。
+ * @brief 动态切换帧校验算法。
+ * @param ctx 目标上下文。
+ * @param algo 目标算法。
+ * @return true 切换成功。
+ * @return false 参数非法或算法不支持。
  */
-bool mod_k230_send_bytes(const uint8_t *data, uint16_t len);
+bool mod_k230_set_checksum_algo(mod_k230_ctx_t *ctx, mod_k230_checksum_algo_t algo);
 
 /**
- * @brief 查询发送通道是否空闲。
- * @return true 可发送。
- * @return false 通道忙或模块未就绪。
+ * @brief 追加一个数据到达通知信号量。
+ * @param ctx 目标上下文。
+ * @param sem_id 待绑定信号量。
+ * @return true 追加成功（若已存在也返回 true）。
+ * @return false 追加失败。
  */
-bool mod_k230_is_tx_free(void);
+bool mod_k230_add_semaphore(mod_k230_ctx_t *ctx, osSemaphoreId_t sem_id);
 
 /**
- * @brief 设置发送互斥锁句柄。
- * @param mutex_id 互斥锁句柄，传 `NULL` 表示不使用互斥锁。
+ * @brief 移除一个数据到达通知信号量。
+ * @param ctx 目标上下文。
+ * @param sem_id 待移除信号量。
+ * @return true 移除成功。
+ * @return false 移除失败。
  */
-void mod_k230_set_tx_mutex(osMutexId_t mutex_id);
+bool mod_k230_remove_semaphore(mod_k230_ctx_t *ctx, osSemaphoreId_t sem_id);
 
 /**
- * @brief 获取当前接收缓存可读字节数。
+ * @brief 清空所有通知信号量绑定。
+ * @param ctx 目标上下文。
+ */
+void mod_k230_clear_semaphores(mod_k230_ctx_t *ctx);
+
+/**
+ * @brief 设置发送互斥锁。
+ * @param ctx 目标上下文。
+ * @param mutex_id 互斥锁句柄；NULL 表示关闭互斥保护。
+ */
+void mod_k230_set_tx_mutex(mod_k230_ctx_t *ctx, osMutexId_t mutex_id);
+
+/* ========================= 收发与解析接口 ========================= */
+
+/**
+ * @brief 发送原始字节流（DMA）。
+ * @param ctx 目标上下文。
+ * @param data 数据首地址。
+ * @param len 数据长度（字节）。
+ * @return true DMA 启动成功。
+ * @return false 参数非法、通道忙或上下文未就绪。
+ */
+bool mod_k230_send_bytes(mod_k230_ctx_t *ctx, const uint8_t *data, uint16_t len);
+
+/**
+ * @brief 查询 TX 通道是否空闲。
+ * @param ctx 目标上下文。
+ * @return true 空闲。
+ * @return false 忙或上下文未就绪。
+ */
+bool mod_k230_is_tx_free(const mod_k230_ctx_t *ctx);
+
+/**
+ * @brief 查询接收环形缓冲当前可读字节数。
+ * @param ctx 目标上下文。
  * @return uint16_t 可读字节数。
  */
-uint16_t mod_k230_available(void);
+uint16_t mod_k230_available(const mod_k230_ctx_t *ctx);
 
 /**
- * @brief 从接收环形缓冲区读取数据。
- * @param out 输出缓冲区地址。
- * @param max_len 期望读取的最大长度。
- * @return uint16_t 实际读取字节数。
+ * @brief 从接收环形缓冲读取数据。
+ * @param ctx 目标上下文。
+ * @param out 输出缓冲。
+ * @param max_len 最大读取长度。
+ * @return uint16_t 实际读取长度。
  */
-uint16_t mod_k230_read_bytes(uint8_t *out, uint16_t max_len);
+uint16_t mod_k230_read_bytes(mod_k230_ctx_t *ctx, uint8_t *out, uint16_t max_len);
 
 /**
- * @brief 清空接收缓存。
+ * @brief 清空接收环形缓冲与解析状态机。
+ * @param ctx 目标上下文。
  */
-void mod_k230_clear_rx_buffer(void);
+void mod_k230_clear_rx_buffer(mod_k230_ctx_t *ctx);
 
 /**
- * @brief 从接收流解析最新有效协议帧。
- * @param out_frame 输出参数，用于返回解析后的帧数据。
- * @return true 成功解析到有效帧。
- * @return false 当前无有效帧或参数无效。
+ * @brief 从接收流中解析“最新一帧有效协议帧”。
+ * @details
+ * 函数会尽可能消费当前缓冲中的全部字节，最终输出最后一次解析成功的帧。
+ *
+ * @param ctx 目标上下文。
+ * @param out_frame 输出结构体。
+ * @return true 解析到至少一帧有效帧。
+ * @return false 未解析到有效帧或参数非法。
  */
-bool mod_k230_get_latest_frame(mod_k230_frame_data_t *out_frame);
+bool mod_k230_get_latest_frame(mod_k230_ctx_t *ctx, mod_k230_frame_data_t *out_frame);
 
 #endif /* FINAL_GRADUATE_WORK_MOD_K230_H */
