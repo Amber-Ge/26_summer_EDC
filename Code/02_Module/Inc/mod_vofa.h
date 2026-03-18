@@ -18,28 +18,28 @@
 
 typedef enum
 {
-    VOFA_CMD_NONE = 0, // 无命令
-    VOFA_CMD_START, // 启动命令
-    VOFA_CMD_STOP, // 停止命令
-    VOFA_CMD_MAX // 命令类型数量上限
+    VOFA_CMD_NONE = 0, // 未识别到有效命令，或当前接收缓存中没有命令数据。
+    VOFA_CMD_START,    // 解析到 start 命令（兼容旧协议保留字段，当前流程可不使用）。
+    VOFA_CMD_STOP,     // 解析到 stop 命令（兼容旧协议保留字段，当前流程可不使用）。
+    VOFA_CMD_MAX       // 命令枚举上界标记，不是有效命令值。
 } vofa_cmd_id_t;
 
 typedef struct
 {
-    UART_HandleTypeDef *huart; // 绑定的串口句柄
-    osSemaphoreId_t sem_list[MOD_VOFA_MAX_BIND_SEM]; // 绑定的事件信号量列表
-    uint8_t sem_count; // 有效信号量数量
-    osMutexId_t tx_mutex; // 发送互斥锁句柄
+    UART_HandleTypeDef *huart; // 绑定串口句柄（必填）。VOFA 的 DMA 收发都通过该串口完成。
+    osSemaphoreId_t sem_list[MOD_VOFA_MAX_BIND_SEM]; // 数据/事件通知信号量列表。收到命令或数据后可逐个 release 通知上层任务。
+    uint8_t sem_count; // sem_list 的有效元素数量。仅 [0, sem_count) 范围被视为已绑定对象。
+    osMutexId_t tx_mutex; // 发送互斥锁句柄（可选）。多任务并发发送 VOFA 文本时用于串口互斥保护。
 } mod_vofa_bind_t;
 
 typedef struct
 {
-    bool inited; // 模块是否已初始化
-    bool bound; // 模块是否已完成绑定
-    mod_vofa_bind_t bind; // 绑定参数集合
-    vofa_cmd_id_t last_cmd; // 最近一次解析到的命令
-    char tx_buf[MOD_VOFA_TX_BUF_SIZE]; // 文本发送缓冲区
-    uint8_t rx_buf[MOD_VOFA_RX_BUF_SIZE]; // DMA接收缓冲区
+    bool inited; // 上下文是否已初始化。ctx_init 成功后为 true，未初始化不允许 bind/send/get_command。
+    bool bound; // 上下文是否已完成绑定。true 代表已占用 UART 并完成接收回调链路配置。
+    mod_vofa_bind_t bind; // 当前生效绑定参数副本。bind 成功时写入，unbind/deinit 时会被清理。
+    vofa_cmd_id_t last_cmd; // 最近一次解析到的命令结果。上层可轮询该字段获取最新命令状态。
+    char tx_buf[MOD_VOFA_TX_BUF_SIZE]; // 文本发送缓冲区。格式化后的 VOFA 文本先写入这里，再启动 DMA 发送。
+    uint8_t rx_buf[MOD_VOFA_RX_BUF_SIZE]; // DMA 接收缓冲区。串口接收回调将基于该缓存解析命令字符串。
 } mod_vofa_ctx_t;
 
 /* ========================== [ Ctx-based API ] ========================== */

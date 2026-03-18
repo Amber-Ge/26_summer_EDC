@@ -43,7 +43,7 @@
  */
 typedef enum
 {
-    MOD_K230_CHECKSUM_XOR = 0U, /**< XOR 校验（当前唯一已实现算法） */
+    MOD_K230_CHECKSUM_XOR = 0U, // XOR 校验算法。当前工程唯一已实现且已验证的算法类型。
     MOD_K230_CHECKSUM_MAX
 } mod_k230_checksum_algo_t;
 
@@ -52,10 +52,10 @@ typedef enum
  */
 typedef struct
 {
-    uint8_t motor1_id; /**< 协议帧中的电机1 ID 字段 */
-    int16_t err1;      /**< 协议帧中的电机1误差字段（高字节在前） */
-    uint8_t motor2_id; /**< 协议帧中的电机2 ID 字段 */
-    int16_t err2;      /**< 协议帧中的电机2误差字段（高字节在前） */
+    uint8_t motor1_id; // 协议帧中的电机1逻辑ID。任务层用它决定把 err1 分发给哪个电机通道。
+    int16_t err1;      // 协议帧中的电机1误差值（大端高字节在前）。正负号含义由任务层方向映射策略解释。
+    uint8_t motor2_id; // 协议帧中的电机2逻辑ID。任务层用它决定把 err2 分发给哪个电机通道。
+    int16_t err2;      // 协议帧中的电机2误差值（大端高字节在前）。一般与 motor2_id 配对使用。
 } mod_k230_frame_data_t;
 
 /**
@@ -67,11 +67,11 @@ typedef struct
  */
 typedef struct
 {
-    UART_HandleTypeDef *huart;                         /**< 绑定的 UART 句柄，必填 */
-    osSemaphoreId_t sem_list[MOD_K230_MAX_BIND_SEM];  /**< 数据到达通知信号量列表 */
-    uint8_t sem_count;                                 /**< sem_list 有效数量 */
-    osMutexId_t tx_mutex;                              /**< 发送互斥锁，可为 NULL */
-    mod_k230_checksum_algo_t checksum_algo;            /**< 帧校验算法选择 */
+    UART_HandleTypeDef *huart;                         // 绑定的串口句柄（必填，不能为空）。K230 收发 DMA 都依赖此句柄。
+    osSemaphoreId_t sem_list[MOD_K230_MAX_BIND_SEM];  // 数据到达通知信号量列表。收到一批新数据后会逐个 release。
+    uint8_t sem_count;                                 // sem_list 实际有效数量。只会读取 [0, sem_count) 范围内的元素。
+    osMutexId_t tx_mutex;                              // 发送互斥锁（可选）。为 NULL 表示发送不加锁；非 NULL 表示发送前先加锁。
+    mod_k230_checksum_algo_t checksum_algo;            // 接收帧校验算法选择。决定解析时用哪种算法判定帧合法性。
 } mod_k230_bind_t;
 
 /**
@@ -82,19 +82,19 @@ typedef struct
  */
 typedef struct
 {
-    bool inited;                                       /**< 上下文是否完成初始化 */
-    bool bound;                                        /**< 上下文是否已完成 UART 绑定 */
-    mod_k230_bind_t bind;                              /**< 当前生效的绑定配置 */
+    bool inited;                                       // 上下文是否已初始化。ctx_init 成功后为 true，未初始化不允许 bind/send/read。
+    bool bound;                                        // 上下文是否已绑定完成。true 代表 UART、回调、DMA 接收链路已建立。
+    mod_k230_bind_t bind;                              // 当前生效绑定参数副本。bind 成功写入，unbind/deinit 时会清理。
 
-    uint8_t rx_dma_buf[MOD_K230_RX_DMA_BUF_SIZE];      /**< DMA 接收暂存缓冲 */
-    uint8_t rx_ring_buf[MOD_K230_RX_RING_BUF_SIZE];    /**< 软件环形接收缓冲 */
-    volatile uint16_t rx_head;                         /**< 环形缓冲写指针 */
-    volatile uint16_t rx_tail;                         /**< 环形缓冲读指针 */
+    uint8_t rx_dma_buf[MOD_K230_RX_DMA_BUF_SIZE];      // DMA 接收临时缓冲。UART DMA 回调上报的数据先落到这里，再搬运到环形缓冲。
+    uint8_t rx_ring_buf[MOD_K230_RX_RING_BUF_SIZE];    // 软件环形接收缓冲。用于缓存待解析数据，吸收任务调度抖动与突发数据。
+    volatile uint16_t rx_head;                         // 环形缓冲写指针。写入新字节时前移，可能在中断上下文更新，因此声明为 volatile。
+    volatile uint16_t rx_tail;                         // 环形缓冲读指针。上层读取/解析时前移，表示已消费到的位置。
 
-    uint8_t tx_buf[MOD_K230_TX_BUF_SIZE];              /**< DMA 发送缓冲 */
+    uint8_t tx_buf[MOD_K230_TX_BUF_SIZE];              // DMA 发送缓冲。发送前先复制用户数据，避免 DMA 引用调用者短生命周期内存。
 
-    uint8_t parse_buf[MOD_K230_PROTO_FRAME_SIZE];      /**< 帧解析状态机缓存 */
-    uint8_t parse_len;                                 /**< 当前 parse_buf 已填充长度 */
+    uint8_t parse_buf[MOD_K230_PROTO_FRAME_SIZE];      // 协议解析状态机缓存。按字节流逐步拼出固定 12 字节帧。
+    uint8_t parse_len;                                 // 当前 parse_buf 已填充字节数。用于表示解析状态机进度。
 } mod_k230_ctx_t;
 
 /* ========================= Context 生命周期 ========================= */

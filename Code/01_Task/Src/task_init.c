@@ -10,6 +10,7 @@
 #include "mod_sensor.h"
 #include "mod_vofa.h"
 #include "mod_k230.h"
+#include "task_stepper.h"
 #include <string.h>
 
 /**
@@ -209,6 +210,22 @@ static void task_init_k230_bind(void)
     }
 }
 
+/**
+ * @brief 在 InitTask 阶段完成 Stepper 协议通道绑定。
+ *
+ * @details
+ * 设计目的：
+ * 1. 与 VOFA/K230 保持一致的初始化风格：由 InitTask 统一装配协议模块。
+ * 2. StepperTask 不再负责“创建+绑定”，仅负责运行期 20ms 控制循环。
+ * 3. 即使部分通道绑定失败，也不在此处阻塞系统启动：
+ *    具体失败状态由 task_stepper_prepare_channels() 写入通道状态中，
+ *    后续可由任务层按通道状态进行容错处理。
+ */
+static void task_init_stepper_bind(void)
+{
+    (void)task_stepper_prepare_channels();
+}
+
 void task_wait_init_done(void)
 {
     if (Sem_InitHandle == NULL)
@@ -232,6 +249,7 @@ void StartInitTask(void *argument)
     /* 在初始化任务中完成 VOFA 串口绑定，替代原 PcTask 的绑定职责。 */
     task_init_vofa_bind();
     task_init_k230_bind();
+    task_init_stepper_bind();
 
     if (Sem_InitHandle != NULL)
     {
