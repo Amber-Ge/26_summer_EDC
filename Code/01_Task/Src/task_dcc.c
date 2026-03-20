@@ -283,7 +283,7 @@ void StartDccTask(void *argument)
             mod_motor_set_duty(MOD_MOTOR_LEFT, convert_to_duty_cmd(left_duty_f));
             mod_motor_set_duty(MOD_MOTOR_RIGHT, convert_to_duty_cmd(right_duty_f));
 
-            // 若 VOFA 已绑定，则发送调试数据
+            //若 VOFA 已绑定，则发送调试数据
             // if (mod_vofa_is_bound(p_vofa_ctx))
             // {
             //     vofa_payload[0] = (float)MOTOR_TARGET_SPEED; // CH0：全局目标速度

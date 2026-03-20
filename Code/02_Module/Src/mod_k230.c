@@ -490,20 +490,77 @@ static void _notify_all_bound_semaphores(const mod_k230_ctx_t *ctx)
 }
 
 /**
+ * @brief 关闭当前 K230 接收 DMA 的半传输中断（HT）。
+ *
+ * @details
+ * 当前 K230 接收链路采用「ReceiveToIdle + 正常模式 DMA + 回调后重启 DMA」。
+ * 在该策略下，HT 中断会引入中间分段回调，不符合当前链路的一次性搬运预期，
+ * 因此这里显式关闭 HT，仅保留 IDLE/TC 事件驱动。
+ *
+ * @param ctx K230 上下文指针。
+ */
+static void _disable_rx_dma_half_transfer_irq(mod_k230_ctx_t *ctx)
+{
+    if ((ctx == NULL) || (ctx->bind.huart == NULL))
+    {
+        return;
+    }
+
+    if (ctx->bind.huart->hdmarx == NULL)
+    {
+        return;
+    }
+
+    __HAL_DMA_DISABLE_IT(ctx->bind.huart->hdmarx, DMA_IT_HT);
+}
+
+/**
+ * @brief 判断当前 RxEvent 是否为 DMA 半传输事件（HT）。
+ *
+ * @details
+ * HAL 的 ReceiveToIdle DMA 回调可能来自 HT/TC/IDLE 三类事件。
+ * 对当前 K230 实现，HT 事件需要被过滤，避免提前搬运与提前重启 DMA。
+ *
+ * @param ctx K230 上下文指针。
+ * @return true  当前回调事件类型是 HT。
+ * @return false 当前回调事件类型不是 HT，或上下文无效。
+ */
+static bool _is_rx_event_half_transfer(mod_k230_ctx_t *ctx)
+{
+    HAL_UART_RxEventTypeTypeDef rx_event_type;
+
+    if ((ctx == NULL) || (ctx->bind.huart == NULL))
+    {
+        return false;
+    }
+
+    rx_event_type = HAL_UARTEx_GetRxEventType(ctx->bind.huart);
+    return (rx_event_type == HAL_UART_RXEVENT_HT);
+}
+
+/**
  * @brief 重启 DMA 接收；失败时做一次 stop+retry。
  * @param ctx 上下文。
  */
 static void _restart_rx_dma(mod_k230_ctx_t *ctx)
 {
+    bool start_ok;
+
     if (!_ctx_ready(ctx))
     {
         return;
     }
 
-    if (!drv_uart_receive_dma_start(ctx->bind.huart, ctx->rx_dma_buf, MOD_K230_RX_DMA_BUF_SIZE))
+    start_ok = drv_uart_receive_dma_start(ctx->bind.huart, ctx->rx_dma_buf, MOD_K230_RX_DMA_BUF_SIZE);
+    if (!start_ok)
     {
         drv_uart_receive_dma_stop(ctx->bind.huart);
-        (void)drv_uart_receive_dma_start(ctx->bind.huart, ctx->rx_dma_buf, MOD_K230_RX_DMA_BUF_SIZE);
+        start_ok = drv_uart_receive_dma_start(ctx->bind.huart, ctx->rx_dma_buf, MOD_K230_RX_DMA_BUF_SIZE);
+    }
+
+    if (start_ok)
+    {
+        _disable_rx_dma_half_transfer_irq(ctx);
     }
 }
 
@@ -515,6 +572,15 @@ static void _restart_rx_dma(mod_k230_ctx_t *ctx)
 static void _k230_rx_callback_handler(mod_k230_ctx_t *ctx, uint16_t len)
 {
     if (!_ctx_ready(ctx))
+    {
+        return;
+    }
+
+    /*
+     * HT 事件说明 DMA 只完成了半段搬运，此时不应消费数据、也不应重启 DMA。
+     * 这里直接忽略 HT，等待后续 IDLE/TC 事件再执行完整搬运流程。
+     */
+    if (_is_rx_event_half_transfer(ctx))
     {
         return;
     }
@@ -652,6 +718,10 @@ bool mod_k230_bind(mod_k230_ctx_t *ctx, const mod_k230_bind_t *bind)
     if (result)
     {
         result = drv_uart_receive_dma_start(ctx->bind.huart, ctx->rx_dma_buf, MOD_K230_RX_DMA_BUF_SIZE);
+        if (result)
+        {
+            _disable_rx_dma_half_transfer_irq(ctx);
+        }
     }
 
     if (!result)
