@@ -1,13 +1,17 @@
 /**
  ******************************************************************************
  * @file    task_stepper.h
- * @brief   步进任务层接口与通道映射配置。
+ * @brief   Stepper任务层接口（当前版本用于K230数据观测与VOFA转发）
  *
  * @details
- * 分层原则（本文件是关键边界）：
- * 1. 协议层（mod_stepper）只负责“向某个 driver_addr 发命令”。
- * 2. 任务层（task_stepper）负责“逻辑电机ID -> 协议上下文”的映射。
- * 3. InitTask 负责统一绑定（与 VOFA/K230 风格一致），StepperTask 只跑控制循环。
+ * 当前任务层的职责边界如下：
+ * 1. 不下发任何步进电机控制命令，仅做数据观测链路验证。
+ * 2. 以固定20ms周期，从K230协议模块读取“当前缓冲区可解析到的最新一帧”。
+ * 3. 将缓存的4个观测量通过VOFA发出：id1, err1, id2, err2。
+ * 4. 保留mod_stepper头文件与预留接口，后续恢复电机控制时无需改调用关系。
+ *
+ * 典型数据流：
+ * K230(UART4 RX DMA) -> mod_k230环形缓冲区 -> task_stepper取最新帧 -> VOFA(UART3 TX DMA)
  ******************************************************************************
  */
 #ifndef FINAL_GRADUATE_WORK_TASK_STEPPER_H
@@ -16,162 +20,104 @@
 #include "cmsis_os.h"
 #include "mod_k230.h"
 #include "mod_stepper.h"
-#include "usart.h"
 #include <stdbool.h>
 #include <stdint.h>
 
 /* ========================= 调度参数 ========================= */
 
 /**
- * @brief StepperTask 主循环周期（毫秒）。
+ * @brief StepperTask主循环周期（毫秒）
  *
- * 需求为每 20ms 处理一次 K230 误差并进行位置修正，因此固定为 20。
+ * 当前需求为每20ms执行一次：
+ * 1. 拉取K230最新帧
+ * 2. 发送VOFA观测数据
  */
-#define TASK_STEPPER_PERIOD_MS                    (20U)
+#define TASK_STEPPER_PERIOD_MS      (20U)
 
 /**
- * @brief 任务启停开关。
- * - 1：运行控制循环。
- * - 0：启动后挂起（用于临时调试）。
+ * @brief Stepper任务启动开关
+ * - 1：任务正常运行
+ * - 0：任务启动后立即挂起（用于临时屏蔽任务影响）
  */
-#define TASK_STEPPER_STARTUP_ENABLE               (1U)
+#define TASK_STEPPER_STARTUP_ENABLE (1U)
 
 /**
- * @brief 是否在 InitTask 绑定阶段发送一次使能命令。
+ * @brief VOFA发送标签
  *
- * 该设置可将“驱动使能”行为收敛到初始化阶段，避免业务循环中混入一次性启动动作。
+ * 最终发送格式由mod_vofa决定，标签用于区分数据来源。
  */
-#define TASK_STEPPER_ENABLE_AT_BIND               (true)
-
-/* ========================= 通道配置 ========================= */
-
-/**
- * @brief 通道开关。
- *
- * 当前需求是双电机，因此 CH1/CH2 都启用。
- */
-#define TASK_STEPPER_ENABLE_CH1                   (1U)
-#define TASK_STEPPER_ENABLE_CH2                   (1U)
-
-/**
- * @brief CH1 映射参数。
- */
-#define TASK_STEPPER_CH1_HUART                    (&huart5)
-#define TASK_STEPPER_CH1_LOGIC_ID                 (1U)
-#define TASK_STEPPER_CH1_DRIVER_ADDR              (1U)
-#define TASK_STEPPER_CH1_MAX_SPEED_RPM            (100U)
-#define TASK_STEPPER_CH1_POS_ERR_IS_CW            (true)
-
-/**
- * @brief CH2 映射参数。
- */
-#define TASK_STEPPER_CH2_HUART                    (&huart2)
-#define TASK_STEPPER_CH2_LOGIC_ID                 (2U)
-#define TASK_STEPPER_CH2_DRIVER_ADDR              (2U)
-#define TASK_STEPPER_CH2_MAX_SPEED_RPM            (100U)
-#define TASK_STEPPER_CH2_POS_ERR_IS_CW            (true)
-
-/* ========================= 误差修正策略参数 ========================= */
-
-/**
- * @brief 误差死区。
- *
- * 当 |error| <= 死区时，本周期不下发位置修正命令。
- */
-#define TASK_STEPPER_ERR_DEADBAND                 (0)
-
-/**
- * @brief 误差到脉冲的线性系数。
- *
- * 计算公式：
- * pulse = abs(error) * TASK_STEPPER_PULSE_PER_ERR
- */
-#define TASK_STEPPER_PULSE_PER_ERR                (1U)
-
-/**
- * @brief 脉冲输出限幅。
- *
- * - MIN 仅在 pulse 非 0 时生效，避免“有误差但脉冲被截为0”。
- * - MAX 用于限制单周期修正步长，防止过激动作。
- */
-#define TASK_STEPPER_PULSE_MIN                    (1U)
-#define TASK_STEPPER_PULSE_MAX                    (400U)
-
-/**
- * @brief 位置模式公共参数（修正环默认使用）。
- */
-#define TASK_STEPPER_POS_ACC                      (0U)
-#define TASK_STEPPER_POS_ABSOLUTE                 (false)
-#define TASK_STEPPER_POS_SYNC_FLAG                (false)
+#define TASK_STEPPER_VOFA_TAG       ("K230")
 
 /* ========================= 状态结构 ========================= */
 
 /**
- * @brief 单通道可观测状态。
+ * @brief Stepper任务观测状态结构
  *
- * 这些字段用于调试与上层观察，不参与协议层逻辑决策。
+ * 该结构体用于：
+ * 1. 保存最近一次有效K230数据
+ * 2. 暴露链路状态（K230是否绑定、VOFA是否绑定）
+ * 3. 提供基础统计（帧更新次数、VOFA发送成功/丢弃次数）
  */
 typedef struct
 {
-    bool configured;              // 通道配置是否已装载。prepare_channels() 开始处理该通道时置 true，表示该槽位有效。
-    bool bound;                   // 协议上下文是否已绑定成功。true 才允许该通道下发速度/位置命令。
-    bool enabled;                 // 初始化阶段“使能命令”是否发送成功。仅用于观测初始化结果，不代表驱动实时在线状态。
-    uint8_t logic_id;             // 任务层逻辑电机ID。用于匹配 K230 帧中的 motor_id 并路由到对应通道。
-    uint8_t driver_addr;          // 协议层驱动地址。真正下发指令时写入协议帧第 1 字节，决定目标驱动器。
-    uint16_t max_speed_rpm;       // 本通道速度上限（RPM）。任务层会先按此限幅，再调用协议层发送命令。
-    bool positive_err_is_cw;      // 误差符号到方向的映射策略。true=正误差走 CW，false=正误差走 CCW。
+    bool configured;            // 任务准备流程是否执行完成
+    bool k230_bound;            // 本周期检查到的K230绑定状态
+    bool vofa_bound;            // 本周期检查到的VOFA绑定状态
 
-    int16_t last_err;             // 最近一次用于控制计算的误差值（来自 K230）。每次消费到新帧后会刷新。
-    uint32_t last_pulse_cmd;      // 最近一次实际下发的位置脉冲值。可用于判断当前控制输出是否过大或长期为 0。
-    mod_stepper_dir_e last_dir;   // 最近一次下发方向。用于调试“误差正负与电机转向是否一致”问题。
+    uint8_t motor1_id;          // 最近一帧中的电机1 ID
+    int16_t err1;               // 最近一帧中的电机1误差
+    uint8_t motor2_id;          // 最近一帧中的电机2 ID
+    int16_t err2;               // 最近一帧中的电机2误差
 
-    uint32_t tx_cmd_count;        // 发送成功计数（语义是 DMA 启动成功）。不是“驱动执行完成计数”。
-    uint32_t tx_drop_count;       // 发送失败或放弃计数（如未绑定/速度为0/串口忙/启动DMA失败等）用于统计丢命令情况。
+    uint32_t frame_update_count; // 成功获取新有效帧的累计次数
+    uint32_t vofa_tx_ok_count;   // VOFA发送成功累计次数（DMA启动成功）
+    uint32_t vofa_tx_drop_count; // VOFA发送失败累计次数（未绑定或忙等原因）
 } task_stepper_state_t;
 
-/* ========================= 任务层对外接口 ========================= */
+/* ========================= 任务层接口 ========================= */
 
 /**
- * @brief 在初始化阶段准备全部步进通道（创建/绑定/可选使能）。
+ * @brief Stepper任务准备函数
  *
- * 建议调用位置：
- * - InitTask 中，在释放 Sem_Init 前调用。
+ * 当前版本行为：
+ * 1. 清零观测状态
+ * 2. 标记任务已准备完成
  *
- * @return true 全部通道成功；false 存在任一通道失败。
+ * @return true 始终返回成功
  */
 bool task_stepper_prepare_channels(void);
 
 /**
- * @brief 查询通道准备流程是否已经执行。
+ * @brief 查询Stepper任务是否已完成准备
+ * @return true 已准备
+ * @return false 未准备
  */
 bool task_stepper_is_ready(void);
 
 /**
- * @brief StepperTask 任务入口。
+ * @brief Stepper任务入口
+ * @param argument RTOS任务参数（当前未使用）
  */
 void StartStepperTask(void *argument);
 
 /**
- * @brief 按逻辑ID查询通道状态（只读）。
- * @param logic_id 逻辑电机ID。
- * @return 状态指针；未找到返回 NULL。
+ * @brief 获取Stepper任务状态只读指针
+ * @param logic_id 预留参数，当前版本不参与索引
+ * @return 状态指针；若任务未准备则返回NULL
  */
 const task_stepper_state_t *task_stepper_get_state(uint8_t logic_id);
 
 /**
- * @brief 任务层保留的速度模式接口。
+ * @brief 预留接口：发送速度命令
  *
- * 说明：
- * - 该接口是“按逻辑ID路由”的包装层。
- * - 最终会转发到 mod_stepper_velocity。
+ * 当前版本不调用mod_stepper，固定返回false。
  */
 bool task_stepper_send_velocity(uint8_t logic_id, mod_stepper_dir_e dir, uint16_t vel_rpm, uint8_t acc, bool sync_flag);
 
 /**
- * @brief 任务层保留的位置模式接口（手动调试/覆盖控制可用）。
+ * @brief 预留接口：发送位置命令
  *
- * 说明：
- * - 该接口同样按逻辑ID路由到对应协议上下文。
+ * 当前版本不调用mod_stepper，固定返回false。
  */
 bool task_stepper_send_position(uint8_t logic_id, mod_stepper_dir_e dir, uint16_t vel_rpm, uint8_t acc, uint32_t pulse, bool absolute_mode, bool sync_flag);
 

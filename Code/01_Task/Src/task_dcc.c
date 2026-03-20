@@ -284,14 +284,14 @@ void StartDccTask(void *argument)
             mod_motor_set_duty(MOD_MOTOR_RIGHT, convert_to_duty_cmd(right_duty_f));
 
             // 若 VOFA 已绑定，则发送调试数据
-            if (mod_vofa_is_bound(p_vofa_ctx))
-            {
-                vofa_payload[0] = (float)MOTOR_TARGET_SPEED; // CH0：全局目标速度
-                vofa_payload[1] = left_target_speed;         // CH1：左轮目标速度
-                vofa_payload[2] = right_target_speed;        // CH2：右轮目标速度
-                vofa_payload[3] = pos_error;                 // CH3：左右位置差
-                (void)mod_vofa_send_float_ctx(p_vofa_ctx, "DccCtrl", vofa_payload, 4U);
-            }
+            // if (mod_vofa_is_bound(p_vofa_ctx))
+            // {
+            //     vofa_payload[0] = (float)MOTOR_TARGET_SPEED; // CH0：全局目标速度
+            //     vofa_payload[1] = left_target_speed;         // CH1：左轮目标速度
+            //     vofa_payload[2] = right_target_speed;        // CH2：右轮目标速度
+            //     vofa_payload[3] = pos_error;                 // CH3：左右位置差
+            //     (void)mod_vofa_send_float_ctx(p_vofa_ctx, "DccCtrl", vofa_payload, 4U);
+            // }
         }
         else
         {
