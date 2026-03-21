@@ -110,10 +110,10 @@ osMutexId_t PcMutexHandle;
 const osMutexAttr_t PcMutex_attributes = {
   .name = "PcMutex"
 };
-/* Definitions for Sem_LED */
-osSemaphoreId_t Sem_LEDHandle;
-const osSemaphoreAttr_t Sem_LED_attributes = {
-  .name = "Sem_LED"
+/* Definitions for Sem_RedLED */
+osSemaphoreId_t Sem_RedLEDHandle;
+const osSemaphoreAttr_t Sem_RedLED_attributes = {
+  .name = "Sem_RedLED"
 };
 /* Definitions for Sem_Dcc */
 osSemaphoreId_t Sem_DccHandle;
@@ -170,8 +170,8 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_MUTEX */
 
   /* Create the semaphores(s) */
-  /* creation of Sem_LED */
-  Sem_LEDHandle = osSemaphoreNew(1, 0, &Sem_LED_attributes);
+  /* creation of Sem_RedLED */
+  Sem_RedLEDHandle = osSemaphoreNew(1, 0, &Sem_RedLED_attributes);
 
   /* creation of Sem_Dcc */
   Sem_DccHandle = osSemaphoreNew(1, 0, &Sem_Dcc_attributes);

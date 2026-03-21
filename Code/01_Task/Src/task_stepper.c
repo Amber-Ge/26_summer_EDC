@@ -74,7 +74,7 @@ static void _update_latest_k230_frame(void)
 static void _send_cached_frame_to_vofa(void)
 {
     mod_vofa_ctx_t *vofa_ctx;
-    float vofa_payload[4];
+    /* float vofa_payload[4]; */
 
     vofa_ctx = mod_vofa_get_default_ctx();
     s_stepper_state.vofa_bound = mod_vofa_is_bound(vofa_ctx);
@@ -84,11 +84,15 @@ static void _send_cached_frame_to_vofa(void)
         return;
     }
 
+    /*
     vofa_payload[0] = (float)s_stepper_state.motor1_id;
     vofa_payload[1] = (float)s_stepper_state.err1;
     vofa_payload[2] = (float)s_stepper_state.motor2_id;
     vofa_payload[3] = (float)s_stepper_state.err2;
+    */
 
+    /* Stepper VOFA发送暂时屏蔽（保留代码，不删除） */
+    /*
     if (mod_vofa_send_float_ctx(vofa_ctx, TASK_STEPPER_VOFA_TAG, vofa_payload, 4U))
     {
         s_stepper_state.vofa_tx_ok_count++;
@@ -97,6 +101,8 @@ static void _send_cached_frame_to_vofa(void)
     {
         s_stepper_state.vofa_tx_drop_count++;
     }
+    */
+    s_stepper_state.vofa_tx_drop_count++;
 }
 
 bool task_stepper_prepare_channels(void)

@@ -97,20 +97,21 @@ static const mod_motor_hw_cfg_t s_motor_bind_map[MOD_MOTOR_MAX] =
 };
 
 /* ========================= 硬件绑定表：12 路循迹传感器 ========================= */
+/* 第3列 line_level：该路读取到该电平时判定“检测到黑线（输出1）” */
 static const mod_sensor_map_item_t s_sensor_bind_map[MOD_SENSOR_CHANNEL_NUM] =
 {
-    {GPIOG, GPIO_PIN_0, -0.60f},
-    {GPIOG, GPIO_PIN_1, -0.40f},
-    {GPIOG, GPIO_PIN_5, -0.30f},
-    {GPIOG, GPIO_PIN_6, -0.20f},
-    {GPIOG, GPIO_PIN_7, -0.10f},
-    {GPIOG, GPIO_PIN_8, -0.05f},
-    {GPIOG, GPIO_PIN_9, 0.05f},
-    {GPIOG, GPIO_PIN_10, 0.10f},
-    {GPIOG, GPIO_PIN_11, 0.20f},
-    {GPIOG, GPIO_PIN_12, 0.30f},
-    {GPIOG, GPIO_PIN_13, 0.40f},
-    {GPIOG, GPIO_PIN_14, 0.60f},
+    {GPIOG, GPIO_PIN_0, GPIO_LEVEL_HIGH, 0.60f},
+    {GPIOG, GPIO_PIN_1, GPIO_LEVEL_HIGH, 0.40f},
+    {GPIOG, GPIO_PIN_5, GPIO_LEVEL_HIGH, 0.30f},
+    {GPIOG, GPIO_PIN_6, GPIO_LEVEL_HIGH, 0.20f},
+    {GPIOG, GPIO_PIN_7, GPIO_LEVEL_HIGH, 0.10f},
+    {GPIOG, GPIO_PIN_8, GPIO_LEVEL_HIGH, 0.05f},
+    {GPIOG, GPIO_PIN_9, GPIO_LEVEL_HIGH, -0.05f},
+    {GPIOG, GPIO_PIN_10, GPIO_LEVEL_HIGH, -0.10f},
+    {GPIOG, GPIO_PIN_11, GPIO_LEVEL_HIGH, -0.20f},
+    {GPIOG, GPIO_PIN_12, GPIO_LEVEL_HIGH, -0.30f},
+    {GPIOG, GPIO_PIN_13, GPIO_LEVEL_HIGH, -0.40f},
+    {GPIOG, GPIO_PIN_14, GPIO_LEVEL_HIGH, -0.60f},
 };
 
 /**
