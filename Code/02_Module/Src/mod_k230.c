@@ -975,6 +975,7 @@ bool mod_k230_get_latest_frame(mod_k230_ctx_t *ctx, mod_k230_frame_data_t *out_f
     bool got_latest = false;
     uint8_t read_buf[64];
     uint16_t read_len;
+    uint8_t batch_count = 0U;
     mod_k230_frame_data_t latest_frame = {0};
 
     if (!_ctx_ready(ctx) || (out_frame == NULL))
@@ -984,7 +985,13 @@ bool mod_k230_get_latest_frame(mod_k230_ctx_t *ctx, mod_k230_frame_data_t *out_f
 
     do
     {
+        if (batch_count >= MOD_K230_MAX_READ_BATCH_PER_CALL)
+        {
+            break;
+        }
+
         read_len = mod_k230_read_bytes(ctx, read_buf, (uint16_t)sizeof(read_buf));
+        batch_count++;
 
         for (uint16_t i = 0U; i < read_len; i++)
         {

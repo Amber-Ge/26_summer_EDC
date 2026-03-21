@@ -95,7 +95,7 @@ const osThreadAttr_t StepperTask_attributes = {
 osThreadId_t DccTaskHandle;
 const osThreadAttr_t DccTask_attributes = {
   .name = "DccTask",
-  .stack_size = 128 * 4,
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityRealtime,
 };
 /* Definitions for InitTask */

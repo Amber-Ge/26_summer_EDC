@@ -100,7 +100,7 @@ static bool _tx_lock(mod_stepper_ctx_t *ctx)
         return true;
     }
 
-    return (osMutexAcquire(ctx->bind.tx_mutex, osWaitForever) == osOK);
+    return (osMutexAcquire(ctx->bind.tx_mutex, MOD_STEPPER_TX_MUTEX_TIMEOUT_MS) == osOK);
 }
 
 /**

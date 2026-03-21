@@ -74,6 +74,13 @@
  */
 #define MOD_STEPPER_TX_ACTIVE_TIMEOUT_MS     (50U)
 
+/**
+ * @brief 发送互斥锁获取超时（毫秒）。
+ *
+ * 避免永久等待导致任务卡死。
+ */
+#define MOD_STEPPER_TX_MUTEX_TIMEOUT_MS       (5U)
+
 /* ========================= 类型定义 ========================= */
 
 /**

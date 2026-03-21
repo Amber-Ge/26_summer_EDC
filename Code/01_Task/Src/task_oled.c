@@ -26,6 +26,7 @@ void StartOledTask(void *argument)
     char task_on[] = "task:ON";
     char task_off[] = "task:OFF";
     char task_prepare[] = "task:PREP";
+    char task_stop[] = "task:STOP";
 
     (void)argument;
 
@@ -93,6 +94,10 @@ void StartOledTask(void *argument)
             if (run_state_value == TASK_DCC_RUN_ON)
             {
                 OLED_ShowString(0U, 48U, task_on, OLED_8X16);
+            }
+            else if (run_state_value == TASK_DCC_RUN_STOP)
+            {
+                OLED_ShowString(0U, 48U, task_stop, OLED_8X16);
             }
             else if (run_state_value == TASK_DCC_RUN_PREPARE)
             {

@@ -17,7 +17,7 @@
 #include "pid_config.h"
 #include "pid_inc.h"
 
-#define TASK_TEST_PERIOD_MS    (1000U)  // 测试任务采样/发送周期（ms）
+#define TASK_TEST_PERIOD_MS    (1000000U)  // 测试任务采样/发送周期（ms）
 #define TASK_TEST_PREPARE_MS   (5000U)  // 预留：测试启动前准备时间（ms）
 #define TASK_TEST_TARGET_SPEED (40)     // 预留：测试默认目标速度
 

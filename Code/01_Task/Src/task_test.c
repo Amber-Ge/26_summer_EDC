@@ -39,19 +39,19 @@ void StartTestTask(void *argument)
 
     for (;;)
     {
-        weight = mod_sensor_get_weight();
-        correction = task_test_clamp(weight, -MOTOR_POS_OUTPUT_MAX, MOTOR_POS_OUTPUT_MAX);
-        left_target_speed = (float)MOTOR_TARGET_SPEED * (1.0f - correction);
-        right_target_speed = (float)MOTOR_TARGET_SPEED * (1.0f + correction);
-
-        vofa_payload[0] = weight;
-        vofa_payload[1] = left_target_speed;
-        vofa_payload[2] = right_target_speed;
-
-        if (mod_vofa_is_bound(p_vofa_ctx))
-        {
-            (void)mod_vofa_send_float_ctx(p_vofa_ctx, "WeightSpeed", vofa_payload, 3U);
-        }
+    //     weight = mod_sensor_get_weight();
+    //     correction = task_test_clamp(weight, -MOTOR_POS_OUTPUT_MAX, MOTOR_POS_OUTPUT_MAX);
+    //     left_target_speed = (float)MOTOR_TARGET_SPEED * (1.0f - correction);
+    //     right_target_speed = (float)MOTOR_TARGET_SPEED * (1.0f + correction);
+    //
+    //     vofa_payload[0] = weight;
+    //     vofa_payload[1] = left_target_speed;
+    //     vofa_payload[2] = right_target_speed;
+    //
+    //     if (mod_vofa_is_bound(p_vofa_ctx))
+    //     {
+    //         (void)mod_vofa_send_float_ctx(p_vofa_ctx, "WeightSpeed", vofa_payload, 3U);
+    //     }
 
         osDelay(TASK_TEST_PERIOD_MS);
     }

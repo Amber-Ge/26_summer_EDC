@@ -34,6 +34,8 @@
 #define MOD_K230_TX_MUTEX_TIMEOUT_MS  (5U)
 /* K230 当前固定协议帧长度（字节）。 */
 #define MOD_K230_PROTO_FRAME_SIZE     (12U)
+/* 单次获取最新帧时最多处理的 64B 批次数，防止任务长时间占用 CPU */
+#define MOD_K230_MAX_READ_BATCH_PER_CALL (6U)
 
 /**
  * @brief K230 帧校验算法枚举。

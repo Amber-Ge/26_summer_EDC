@@ -14,7 +14,7 @@
 
 void StartKeyTask(void *argument);
 
-/* Any key click feedback semaphore. */
+/* 任意按键事件反馈信号量（由KeyTask释放，GpioTask用于黄灯短闪） */
 extern osSemaphoreId_t Sem_RedLEDHandle;
 
 #endif /* FINAL_GRADUATE_WORK_TASK_KEY_H */
