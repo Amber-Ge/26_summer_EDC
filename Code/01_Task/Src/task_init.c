@@ -132,6 +132,8 @@ static void task_init_modules(void)
 {
     mod_led_Init();
     mod_relay_init();
+    /* 初始化后默认打开激光继电器 */
+    mod_relay_on(RELAY_LASER);
     mod_key_init();
 
     mod_motor_init();
