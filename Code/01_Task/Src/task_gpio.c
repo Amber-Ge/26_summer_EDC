@@ -59,6 +59,7 @@ void StartGpioTask(void *argument)
     int red_led_on = 0;                 /* 当前红灯逻辑状态 */
     int buzzer_on = 0;                  /* STOP蜂鸣节奏逻辑状态 */
     int buzzer_output_on = 0;           /* 蜂鸣器当前物理输出状态 */
+    int laser_output_on = 0;            /* 激光继电器当前物理输出状态 */
 
     (void)argument;
 
@@ -75,6 +76,7 @@ void StartGpioTask(void *argument)
     task_gpio_outputs_off();
     mod_led_off(LED_YELLOW);
     mod_relay_off(RELAY_BUZZER);
+    mod_relay_off(RELAY_LASER);
 
     for (;;)
     {
@@ -92,6 +94,16 @@ void StartGpioTask(void *argument)
         }
 
         run_state = task_dcc_get_run_state();
+        if ((run_state == TASK_DCC_RUN_ON) && (laser_output_on == 0))
+        {
+            laser_output_on = 1;
+            mod_relay_on(RELAY_LASER);
+        }
+        else if ((run_state != TASK_DCC_RUN_ON) && (laser_output_on != 0))
+        {
+            laser_output_on = 0;
+            mod_relay_off(RELAY_LASER);
+        }
 
         if (run_state == TASK_DCC_RUN_ON)
         {
