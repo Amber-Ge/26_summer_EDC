@@ -1,11 +1,15 @@
-/**
- ******************************************************************************
+﻿/**
  * @file    mod_oled.h
- * @brief   OLED显示模块接口
+ * @author  姜凯中
+ * @version v1.0.0
+ * @date    2026-03-23
+ * @brief   OLED 显示模块接口。
  * @details
- * 1. 提供OLED缓冲区绘图、文本显示与刷新接口。
- * 2. 模块不再默认绑定I2C，必须先显式调用OLED_BindI2C进行绑定。
- ******************************************************************************
+ * 1. 文件作用：提供 OLED 显存缓存、绘图/文本渲染和整屏刷新接口。
+ * 2. 解耦边界：本模块只处理显示通道与渲染原语，不负责页面业务状态判定。
+ * 3. 上层绑定：`OledTask` 负责组装页面内容并按节拍调用刷新接口。
+ * 4. 下层依赖：I2C 句柄通过绑定接口注入，字模与位图资源由 `mod_oled_data` 提供。
+ * 5. 生命周期：先完成 I2C 绑定和 `OLED_Init`，再进入“写缓冲 -> Update”循环。
  */
 #ifndef FINAL_GRADUATE_WORK_MOD_OLED_H
 #define FINAL_GRADUATE_WORK_MOD_OLED_H
@@ -79,3 +83,4 @@ void OLED_DrawEllipse(uint8_t X, uint8_t Y, uint8_t A, uint8_t B, uint8_t IsFill
 void OLED_DrawArc(uint8_t X, uint8_t Y, uint8_t Radius, int16_t StartAngle, int16_t EndAngle, uint8_t IsFilled);
 
 #endif /* FINAL_GRADUATE_WORK_MOD_OLED_H */
+

@@ -1,18 +1,19 @@
+﻿/**
+ * @file mod_k230.c
+ * @brief K230 协议层模块实现（解耦版）
+ * @details
+ * 1. 文件作用：实现 K230 协议收发状态机、帧校验与最新帧缓存管理。
+ * 2. 解耦边界：协议处理与资源绑定在模块内部闭环，上层仅通过 context API 交互。
+ * 3. 上层绑定：`InitTask` 注入 UART/互斥锁/信号量；`StepperTask` 拉取最新有效帧。
+ * 4. 下层依赖：`drv_uart` 负责字节收发，`mod_uart_guard` 负责 UART 独占仲裁。
+ * 5. 生命周期：先 `ctx_init/bind`，再周期 `process`，最后按需 `unbind/deinit`。
+ */
+
 #include "mod_k230.h"
 #include "mod_uart_guard.h"
 #include "common_checksum.h"
 #include <string.h>
 
-/**
- * @file mod_k230.c
- * @brief K230 协议层模块实现（解耦版）
- * @details
- * 关键实现点：
- * 1. 使用 ctx 承载全部运行态，避免旧版“全局静态单实例”耦合。
- * 2. 使用 bind 承载全部硬件/OS 资源注入信息（UART、mutex、semaphore）。
- * 3. 校验算法由 bind.checksum_algo 决定，当前实现 XOR。
- * 4. 通过 UART->ctx 映射和固定回调分发表，支持“每个 UART 对应一个 K230 ctx”。
- */
 
 /* ========================== [ 1. 协议常量定义 ] ========================== */
 
@@ -40,10 +41,10 @@
 /* ========================== [ 2. 静态资源 ] ========================== */
 
 /* 默认上下文，供外部在不自建实例时直接使用。 */
-static mod_k230_ctx_t s_default_ctx;
+static mod_k230_ctx_t s_default_ctx; // 数据缓存变量
 
 /* UART 实例到 K230 ctx 的反向映射，用于 RX 中断事件分发。 */
-static mod_k230_ctx_t *s_ctx_by_uart[MOD_K230_MAX_UART_INSTANCES] = {NULL};
+static mod_k230_ctx_t *s_ctx_by_uart[MOD_K230_MAX_UART_INSTANCES] = {NULL}; // 模块变量，用于保存运行时状态。
 
 /* ========================== [ 3. 基础工具函数 ] ========================== */
 
@@ -54,7 +55,8 @@ static mod_k230_ctx_t *s_ctx_by_uart[MOD_K230_MAX_UART_INSTANCES] = {NULL};
  */
 static int8_t _get_uart_index(USART_TypeDef *instance)
 {
-    int8_t idx = -1;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    int8_t idx = -1; // 循环或计数变量
 
     switch ((uint32_t)instance)
     {
@@ -76,7 +78,8 @@ static int8_t _get_uart_index(USART_TypeDef *instance)
  */
 static uint32_t _critical_enter(void)
 {
-    uint32_t primask = __get_PRIMASK();
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint32_t primask = __get_PRIMASK(); // 局部业务变量
     __disable_irq();
     return primask;
 }
@@ -87,6 +90,7 @@ static uint32_t _critical_enter(void)
  */
 static void _critical_exit(uint32_t primask)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     __set_PRIMASK(primask);
 }
 
@@ -98,6 +102,7 @@ static void _critical_exit(uint32_t primask)
  */
 static bool _checksum_algo_supported(mod_k230_checksum_algo_t algo)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     return (algo == MOD_K230_CHECKSUM_XOR);
 }
 
@@ -109,6 +114,7 @@ static bool _checksum_algo_supported(mod_k230_checksum_algo_t algo)
  */
 static bool _ctx_ready(const mod_k230_ctx_t *ctx)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     return ((ctx != NULL) &&
             ctx->inited &&
             ctx->bound &&
@@ -121,6 +127,7 @@ static bool _ctx_ready(const mod_k230_ctx_t *ctx)
  */
 static void _reset_parser_state(mod_k230_ctx_t *ctx)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     ctx->parse_len = 0U;
     memset(ctx->parse_buf, 0, sizeof(ctx->parse_buf));
 }
@@ -131,6 +138,7 @@ static void _reset_parser_state(mod_k230_ctx_t *ctx)
  */
 static void _reset_runtime_state(mod_k230_ctx_t *ctx)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     memset(ctx->rx_dma_buf, 0, sizeof(ctx->rx_dma_buf));
     memset(ctx->rx_ring_buf, 0, sizeof(ctx->rx_ring_buf));
     memset(ctx->tx_buf, 0, sizeof(ctx->tx_buf));
@@ -148,7 +156,8 @@ static void _reset_runtime_state(mod_k230_ctx_t *ctx)
  */
 static bool _sem_exists(const mod_k230_bind_t *bind, osSemaphoreId_t sem_id)
 {
-    for (uint8_t i = 0U; i < bind->sem_count; i++)
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    for (uint8_t i = 0U; i < bind->sem_count; i++) // 循环计数器
     {
         if (bind->sem_list[i] == sem_id)
         {
@@ -171,15 +180,16 @@ static bool _sem_exists(const mod_k230_bind_t *bind, osSemaphoreId_t sem_id)
  */
 static void _copy_bind_cfg(mod_k230_ctx_t *ctx, const mod_k230_bind_t *bind)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     ctx->bind.huart = bind->huart;
     ctx->bind.tx_mutex = bind->tx_mutex;
     ctx->bind.checksum_algo = bind->checksum_algo;
     ctx->bind.sem_count = 0U;
     memset(ctx->bind.sem_list, 0, sizeof(ctx->bind.sem_list));
 
-    for (uint8_t i = 0U; (i < bind->sem_count) && (i < MOD_K230_MAX_BIND_SEM); i++)
+    for (uint8_t i = 0U; (i < bind->sem_count) && (i < MOD_K230_MAX_BIND_SEM); i++) // 循环计数器
     {
-        osSemaphoreId_t sem_id = bind->sem_list[i];
+        osSemaphoreId_t sem_id = bind->sem_list[i]; // 局部业务变量
         if ((sem_id != NULL) && !_sem_exists(&ctx->bind, sem_id))
         {
             ctx->bind.sem_list[ctx->bind.sem_count] = sem_id;
@@ -196,6 +206,7 @@ static void _copy_bind_cfg(mod_k230_ctx_t *ctx, const mod_k230_bind_t *bind)
  */
 static bool _bind_cfg_is_valid(const mod_k230_bind_t *bind)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if ((bind == NULL) || (bind->huart == NULL))
     {
         return false;
@@ -223,7 +234,8 @@ static bool _bind_cfg_is_valid(const mod_k230_bind_t *bind)
  */
 static uint16_t _ring_count(const mod_k230_ctx_t *ctx)
 {
-    uint16_t count;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint16_t count; // 循环或计数变量
     if (ctx->rx_head >= ctx->rx_tail)
     {
         count = (uint16_t)(ctx->rx_head - ctx->rx_tail);
@@ -245,7 +257,8 @@ static uint16_t _ring_count(const mod_k230_ctx_t *ctx)
  */
 static void _ring_push_byte(mod_k230_ctx_t *ctx, uint8_t data)
 {
-    uint16_t next_head = (uint16_t)(ctx->rx_head + 1U);
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint16_t next_head = (uint16_t)(ctx->rx_head + 1U); // 轴向或通道变量
     if (next_head >= MOD_K230_RX_RING_BUF_SIZE)
     {
         next_head = 0U;
@@ -270,14 +283,22 @@ static void _ring_push_byte(mod_k230_ctx_t *ctx, uint8_t data)
  * @param data 数据地址。
  * @param len 数据长度。
  */
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param data 输入/输出缓冲区指针。
+ * @param len 数据长度或数量参数。
+ * @return 无。
+ */
 static void _ring_push_block(mod_k230_ctx_t *ctx, const uint8_t *data, uint16_t len)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if (data == NULL)
     {
         return;
     }
 
-    for (uint16_t i = 0U; i < len; i++)
+    for (uint16_t i = 0U; i < len; i++) // 循环计数器
     {
         _ring_push_byte(ctx, data[i]);
     }
@@ -294,6 +315,7 @@ static void _ring_push_block(mod_k230_ctx_t *ctx, const uint8_t *data, uint16_t 
  */
 static bool _proto_frame_is_valid(const mod_k230_ctx_t *ctx, const uint8_t *frame)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if ((ctx == NULL) || (frame == NULL))
     {
         return false;
@@ -327,8 +349,15 @@ static bool _proto_frame_is_valid(const mod_k230_ctx_t *ctx, const uint8_t *fram
  * @param frame 输入帧。
  * @param out_frame 输出结构体。
  */
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param frame 函数输入参数，语义由调用场景决定。
+ * @param out_frame 函数输入参数，语义由调用场景决定。
+ * @return 无。
+ */
 static void _proto_decode_frame(const uint8_t *frame, mod_k230_frame_data_t *out_frame)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if ((frame == NULL) || (out_frame == NULL))
     {
         return;
@@ -353,11 +382,17 @@ static void _proto_decode_frame(const uint8_t *frame, mod_k230_frame_data_t *out
  *
  * @param ctx 上下文。
  */
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 无。
+ */
 static void _proto_resync_after_invalid(mod_k230_ctx_t *ctx)
 {
-    uint8_t new_len = 0U;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint8_t new_len = 0U; // 局部业务变量
 
-    for (uint8_t i = 1U; i < MOD_K230_PROTO_FRAME_SIZE; i++)
+    for (uint8_t i = 1U; i < MOD_K230_PROTO_FRAME_SIZE; i++) // 循环计数器
     {
         if (ctx->parse_buf[i] == K230_PROTO_HEADER_1)
         {
@@ -390,7 +425,8 @@ static void _proto_resync_after_invalid(mod_k230_ctx_t *ctx)
  */
 static bool _proto_feed_byte(mod_k230_ctx_t *ctx, uint8_t byte, mod_k230_frame_data_t *out_frame)
 {
-    bool got_frame = false;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    bool got_frame = false; // 数据缓存变量
 
     /* 状态0：仅接受第一个帧头字节 AA。 */
     if (ctx->parse_len == 0U)
@@ -455,6 +491,7 @@ static bool _proto_feed_byte(mod_k230_ctx_t *ctx, uint8_t byte, mod_k230_frame_d
  */
 static bool _tx_lock(mod_k230_ctx_t *ctx)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if (ctx->bind.tx_mutex == NULL)
     {
         return true;
@@ -468,6 +505,7 @@ static bool _tx_lock(mod_k230_ctx_t *ctx)
  */
 static void _tx_unlock(mod_k230_ctx_t *ctx)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if (ctx->bind.tx_mutex != NULL)
     {
         (void)osMutexRelease(ctx->bind.tx_mutex);
@@ -480,7 +518,8 @@ static void _tx_unlock(mod_k230_ctx_t *ctx)
  */
 static void _notify_all_bound_semaphores(const mod_k230_ctx_t *ctx)
 {
-    for (uint8_t i = 0U; i < ctx->bind.sem_count; i++)
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    for (uint8_t i = 0U; i < ctx->bind.sem_count; i++) // 循环计数器
     {
         if (ctx->bind.sem_list[i] != NULL)
         {
@@ -499,8 +538,14 @@ static void _notify_all_bound_semaphores(const mod_k230_ctx_t *ctx)
  *
  * @param ctx K230 上下文指针。
  */
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 无。
+ */
 static void _disable_rx_dma_half_transfer_irq(mod_k230_ctx_t *ctx)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if ((ctx == NULL) || (ctx->bind.huart == NULL))
     {
         return;
@@ -527,7 +572,8 @@ static void _disable_rx_dma_half_transfer_irq(mod_k230_ctx_t *ctx)
  */
 static bool _is_rx_event_half_transfer(mod_k230_ctx_t *ctx)
 {
-    HAL_UART_RxEventTypeTypeDef rx_event_type;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    HAL_UART_RxEventTypeTypeDef rx_event_type; // UART 接收事件类型
 
     if ((ctx == NULL) || (ctx->bind.huart == NULL))
     {
@@ -544,7 +590,8 @@ static bool _is_rx_event_half_transfer(mod_k230_ctx_t *ctx)
  */
 static void _restart_rx_dma(mod_k230_ctx_t *ctx)
 {
-    bool start_ok;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    bool start_ok; // 执行状态变量
 
     if (!_ctx_ready(ctx))
     {
@@ -569,8 +616,15 @@ static void _restart_rx_dma(mod_k230_ctx_t *ctx)
  * @param ctx 上下文。
  * @param len 本次 DMA 回调报告长度。
  */
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param len 数据长度或数量参数。
+ * @return 无。
+ */
 static void _k230_rx_callback_handler(mod_k230_ctx_t *ctx, uint16_t len)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if (!_ctx_ready(ctx))
     {
         return;
@@ -604,11 +658,18 @@ static void _k230_rx_callback_handler(mod_k230_ctx_t *ctx, uint16_t len)
  * @param uart_idx UART 固定索引。
  * @param len 本次回调长度。
  */
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param uart_idx 索引位置参数。
+ * @param len 数据长度或数量参数。
+ * @return 无。
+ */
 static void _k230_rx_dispatch(uint8_t uart_idx, uint16_t len)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if (uart_idx < MOD_K230_MAX_UART_INSTANCES)
     {
-        mod_k230_ctx_t *ctx = s_ctx_by_uart[uart_idx];
+        mod_k230_ctx_t *ctx = s_ctx_by_uart[uart_idx]; // 模块变量，用于保存运行时状态。
         if (ctx != NULL)
         {
             _k230_rx_callback_handler(ctx, len);
@@ -641,8 +702,15 @@ mod_k230_ctx_t *mod_k230_get_default_ctx(void)
     return &s_default_ctx;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param bind 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_k230_ctx_init(mod_k230_ctx_t *ctx, const mod_k230_bind_t *bind)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if (ctx == NULL)
     {
         return false;
@@ -665,8 +733,14 @@ bool mod_k230_ctx_init(mod_k230_ctx_t *ctx, const mod_k230_bind_t *bind)
     return true;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 无。
+ */
 void mod_k230_ctx_deinit(mod_k230_ctx_t *ctx)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if ((ctx == NULL) || !ctx->inited)
     {
         return;
@@ -676,10 +750,17 @@ void mod_k230_ctx_deinit(mod_k230_ctx_t *ctx)
     memset(ctx, 0, sizeof(mod_k230_ctx_t));
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param bind 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_k230_bind(mod_k230_ctx_t *ctx, const mod_k230_bind_t *bind)
 {
-    int8_t uart_idx;
-    bool result;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    int8_t uart_idx; // 循环或计数变量
+    bool result; // 执行状态变量
 
     if ((ctx == NULL) || !ctx->inited || !_bind_cfg_is_valid(bind))
     {
@@ -740,9 +821,15 @@ bool mod_k230_bind(mod_k230_ctx_t *ctx, const mod_k230_bind_t *bind)
     return true;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 无。
+ */
 void mod_k230_unbind(mod_k230_ctx_t *ctx)
 {
-    int8_t uart_idx;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    int8_t uart_idx; // 循环或计数变量
 
     if ((ctx == NULL) || !ctx->inited)
     {
@@ -768,14 +855,27 @@ void mod_k230_unbind(mod_k230_ctx_t *ctx)
     _reset_runtime_state(ctx);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_k230_is_bound(const mod_k230_ctx_t *ctx)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     return _ctx_ready(ctx);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param algo 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_k230_set_checksum_algo(mod_k230_ctx_t *ctx, mod_k230_checksum_algo_t algo)
 {
-    uint32_t primask;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint32_t primask; // 局部业务变量
 
     if ((ctx == NULL) || !ctx->inited || !_checksum_algo_supported(algo))
     {
@@ -788,10 +888,17 @@ bool mod_k230_set_checksum_algo(mod_k230_ctx_t *ctx, mod_k230_checksum_algo_t al
     return true;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param sem_id 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_k230_add_semaphore(mod_k230_ctx_t *ctx, osSemaphoreId_t sem_id)
 {
-    bool result = false;
-    uint32_t primask;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    bool result = false; // 执行状态变量
+    uint32_t primask; // 局部业务变量
 
     if (!_ctx_ready(ctx) || (sem_id == NULL))
     {
@@ -815,10 +922,17 @@ bool mod_k230_add_semaphore(mod_k230_ctx_t *ctx, osSemaphoreId_t sem_id)
     return result;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param sem_id 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_k230_remove_semaphore(mod_k230_ctx_t *ctx, osSemaphoreId_t sem_id)
 {
-    bool result = false;
-    uint32_t primask;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    bool result = false; // 执行状态变量
+    uint32_t primask; // 局部业务变量
 
     if (!_ctx_ready(ctx) || (sem_id == NULL))
     {
@@ -827,11 +941,11 @@ bool mod_k230_remove_semaphore(mod_k230_ctx_t *ctx, osSemaphoreId_t sem_id)
 
     primask = _critical_enter();
 
-    for (uint8_t i = 0U; i < ctx->bind.sem_count; i++)
+    for (uint8_t i = 0U; i < ctx->bind.sem_count; i++) // 循环计数器
     {
         if (ctx->bind.sem_list[i] == sem_id)
         {
-            for (uint8_t j = i; (j + 1U) < ctx->bind.sem_count; j++)
+            for (uint8_t j = i; (j + 1U) < ctx->bind.sem_count; j++) // 循环计数器
             {
                 ctx->bind.sem_list[j] = ctx->bind.sem_list[j + 1U];
             }
@@ -846,9 +960,15 @@ bool mod_k230_remove_semaphore(mod_k230_ctx_t *ctx, osSemaphoreId_t sem_id)
     return result;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 无。
+ */
 void mod_k230_clear_semaphores(mod_k230_ctx_t *ctx)
 {
-    uint32_t primask;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint32_t primask; // 局部业务变量
 
     if ((ctx == NULL) || !ctx->inited)
     {
@@ -861,9 +981,16 @@ void mod_k230_clear_semaphores(mod_k230_ctx_t *ctx)
     _critical_exit(primask);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param mutex_id 函数输入参数，语义由调用场景决定。
+ * @return 无。
+ */
 void mod_k230_set_tx_mutex(mod_k230_ctx_t *ctx, osMutexId_t mutex_id)
 {
-    uint32_t primask;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint32_t primask; // 局部业务变量
 
     if ((ctx == NULL) || !ctx->inited)
     {
@@ -875,9 +1002,17 @@ void mod_k230_set_tx_mutex(mod_k230_ctx_t *ctx, osMutexId_t mutex_id)
     _critical_exit(primask);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param data 输入/输出缓冲区指针。
+ * @param len 数据长度或数量参数。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_k230_send_bytes(mod_k230_ctx_t *ctx, const uint8_t *data, uint16_t len)
 {
-    bool result = false;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    bool result = false; // 执行状态变量
 
     if (!_ctx_ready(ctx) || (data == NULL) || (len == 0U) || (len > MOD_K230_TX_BUF_SIZE))
     {
@@ -899,8 +1034,14 @@ bool mod_k230_send_bytes(mod_k230_ctx_t *ctx, const uint8_t *data, uint16_t len)
     return result;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_k230_is_tx_free(const mod_k230_ctx_t *ctx)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if (!_ctx_ready(ctx))
     {
         return false;
@@ -909,10 +1050,16 @@ bool mod_k230_is_tx_free(const mod_k230_ctx_t *ctx)
     return drv_uart_is_tx_free(ctx->bind.huart);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 返回计算结果或状态码，具体语义见实现。
+ */
 uint16_t mod_k230_available(const mod_k230_ctx_t *ctx)
 {
-    uint16_t count;
-    uint32_t primask;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint16_t count; // 循环或计数变量
+    uint32_t primask; // 局部业务变量
 
     if (!_ctx_ready(ctx))
     {
@@ -925,10 +1072,18 @@ uint16_t mod_k230_available(const mod_k230_ctx_t *ctx)
     return count;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param out 函数输入参数，语义由调用场景决定。
+ * @param max_len 数据长度或数量参数。
+ * @return 返回计算结果或状态码，具体语义见实现。
+ */
 uint16_t mod_k230_read_bytes(mod_k230_ctx_t *ctx, uint8_t *out, uint16_t max_len)
 {
-    uint16_t read_len = 0U;
-    uint32_t primask;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint16_t read_len = 0U; // 局部业务变量
+    uint32_t primask; // 局部业务变量
 
     if (!_ctx_ready(ctx) || (out == NULL) || (max_len == 0U))
     {
@@ -953,9 +1108,15 @@ uint16_t mod_k230_read_bytes(mod_k230_ctx_t *ctx, uint8_t *out, uint16_t max_len
     return read_len;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 无。
+ */
 void mod_k230_clear_rx_buffer(mod_k230_ctx_t *ctx)
 {
-    uint32_t primask;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint32_t primask; // 局部业务变量
 
     if ((ctx == NULL) || !ctx->inited)
     {
@@ -970,13 +1131,20 @@ void mod_k230_clear_rx_buffer(mod_k230_ctx_t *ctx)
     _critical_exit(primask);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param out_frame 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_k230_get_latest_frame(mod_k230_ctx_t *ctx, mod_k230_frame_data_t *out_frame)
 {
-    bool got_latest = false;
-    uint8_t read_buf[64];
-    uint16_t read_len;
-    uint8_t batch_count = 0U;
-    mod_k230_frame_data_t latest_frame = {0};
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    bool got_latest = false; // 局部业务变量
+    uint8_t read_buf[64]; // 环形缓冲批量读取临时数组
+    uint16_t read_len; // 局部业务变量
+    uint8_t batch_count = 0U; // 循环或计数变量
+    mod_k230_frame_data_t latest_frame = {0}; // 数据缓存变量
 
     if (!_ctx_ready(ctx) || (out_frame == NULL))
     {
@@ -993,9 +1161,9 @@ bool mod_k230_get_latest_frame(mod_k230_ctx_t *ctx, mod_k230_frame_data_t *out_f
         read_len = mod_k230_read_bytes(ctx, read_buf, (uint16_t)sizeof(read_buf));
         batch_count++;
 
-        for (uint16_t i = 0U; i < read_len; i++)
+        for (uint16_t i = 0U; i < read_len; i++) // 循环计数器
         {
-            mod_k230_frame_data_t parsed_frame;
+            mod_k230_frame_data_t parsed_frame; // 数据缓存变量
             if (_proto_feed_byte(ctx, read_buf[i], &parsed_frame))
             {
                 latest_frame = parsed_frame;
@@ -1011,3 +1179,5 @@ bool mod_k230_get_latest_frame(mod_k230_ctx_t *ctx, mod_k230_frame_data_t *out_f
 
     return got_latest;
 }
+
+

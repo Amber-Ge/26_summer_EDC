@@ -1,3 +1,12 @@
+﻿/**
+ * @file    mod_uart_guard.c
+ * @brief   UART 仲裁模块实现。
+ * @details
+ * 1. 文件作用：实现 UART 归属权申请、释放、查询与冲突保护。
+ * 2. 解耦边界：只处理资源仲裁，不参与任何协议收发和任务调度逻辑。
+ * 3. 上层绑定：VOFA/K230/Stepper 等通信模块在 bind/unbind 阶段调用本模块。
+ * 4. 下层依赖：以 UART 句柄实例作为唯一资源标识，不依赖 HAL 中断路径。
+ */
 #include "mod_uart_guard.h"
 #include <stdint.h>
 
@@ -44,6 +53,7 @@ static int8_t _get_uart_index(USART_TypeDef *instance)
  */
 static uint32_t _critical_enter(void)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     uint32_t primask = __get_PRIMASK(); // 保存进入前中断屏蔽状态
     __disable_irq();
     return primask;
@@ -55,9 +65,16 @@ static uint32_t _critical_enter(void)
  */
 static void _critical_exit(uint32_t primask)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     __set_PRIMASK(primask);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param huart 函数输入参数，语义由调用场景决定。
+ * @param owner 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_uart_guard_claim(UART_HandleTypeDef *huart, mod_uart_owner_e owner)
 {
     bool result = false; // 申请结果
@@ -92,6 +109,12 @@ bool mod_uart_guard_claim(UART_HandleTypeDef *huart, mod_uart_owner_e owner)
     return result;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param huart 函数输入参数，语义由调用场景决定。
+ * @param owner 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_uart_guard_release(UART_HandleTypeDef *huart, mod_uart_owner_e owner)
 {
     bool result = false; // 释放结果
@@ -124,6 +147,11 @@ bool mod_uart_guard_release(UART_HandleTypeDef *huart, mod_uart_owner_e owner)
     return result;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param huart 函数输入参数，语义由调用场景决定。
+ * @return 返回函数执行结果。
+ */
 mod_uart_owner_e mod_uart_guard_get_owner(UART_HandleTypeDef *huart)
 {
     int8_t idx; // UART 映射索引
@@ -149,3 +177,4 @@ mod_uart_owner_e mod_uart_guard_get_owner(UART_HandleTypeDef *huart)
     _critical_exit(primask);
     return owner;
 }
+

@@ -1,7 +1,21 @@
+﻿/**
+ * @file    pid_pos.c
+ * @brief   位置式 PID 实现。
+ * @details
+ * 1. 文件作用：实现位置式 PID 初始化与控制计算逻辑。
+ * 2. 上下层绑定：上层由运动控制流程调用；下层不依赖硬件接口。
+ */
 #include "pid_pos.h"
 #include <stddef.h>
 
 // 浮点限幅工具函数：将 value 约束到 [min, max] 区间
+/**
+ * @brief 对浮点值执行区间限幅。
+ * @param value 待限幅值。
+ * @param min 下限值。
+ * @param max 上限值。
+ * @return 限幅后的值。
+ */
 static float clamp_float(float value, float min, float max)
 {
     float result = value; // 1. 默认输出为原始输入值
@@ -17,6 +31,16 @@ static float clamp_float(float value, float min, float max)
     return result; // 4. 统一出口返回限幅结果
 }
 
+/**
+ * @brief 初始化位置式 PID 参数与限幅配置。
+ * @param pid PID 对象指针。
+ * @param kp 比例系数。
+ * @param ki 积分系数。
+ * @param kd 微分系数。
+ * @param out_max 输出绝对值上限。
+ * @param integral_max 积分绝对值上限。
+ * @return 无。
+ */
 void PID_Pos_Init(pid_pos_t *pid, float kp, float ki, float kd, float out_max, float integral_max)
 {
     // 1. 空指针保护
@@ -46,6 +70,11 @@ void PID_Pos_Init(pid_pos_t *pid, float kp, float ki, float kd, float out_max, f
     }
 }
 
+/**
+ * @brief 使用 `pid_config.h` 默认参数初始化位置式 PID。
+ * @param pid PID 对象指针。
+ * @return 无。
+ */
 void PID_Pos_InitByConfig(pid_pos_t *pid)
 {
     // 1. 用 pid_config.h 中的参数初始化 PID
@@ -60,6 +89,12 @@ void PID_Pos_InitByConfig(pid_pos_t *pid)
     PID_Pos_SetTarget(pid, (float)MOTOR_TARGET_SPEED);
 }
 
+/**
+ * @brief 设置位置式 PID 目标值。
+ * @param pid PID 对象指针。
+ * @param target 目标值。
+ * @return 无。
+ */
 void PID_Pos_SetTarget(pid_pos_t *pid, float target)
 {
     // 1. 空指针保护
@@ -67,9 +102,16 @@ void PID_Pos_SetTarget(pid_pos_t *pid, float target)
         pid->target = target;
 }
 
+/**
+ * @brief 设置输出限幅区间，并立即裁剪当前输出。
+ * @param pid PID 对象指针。
+ * @param out_min 输出下限。
+ * @param out_max 输出上限。
+ * @return 无。
+ */
 void PID_Pos_SetOutputLimit(pid_pos_t *pid, float out_min, float out_max)
 {
-    float temp;
+    float temp; // 临时计算变量
     // 1. 空指针保护
     if (pid != NULL)
     {
@@ -88,9 +130,16 @@ void PID_Pos_SetOutputLimit(pid_pos_t *pid, float out_min, float out_max)
     }
 }
 
+/**
+ * @brief 设置积分限幅区间，并立即裁剪当前积分值。
+ * @param pid PID 对象指针。
+ * @param integral_min 积分下限。
+ * @param integral_max 积分上限。
+ * @return 无。
+ */
 void PID_Pos_SetIntegralLimit(pid_pos_t *pid, float integral_min, float integral_max)
 {
-    float temp;
+    float temp; // 临时计算变量
     // 1. 空指针保护
     if (pid != NULL)
     {
@@ -109,6 +158,12 @@ void PID_Pos_SetIntegralLimit(pid_pos_t *pid, float integral_min, float integral
     }
 }
 
+/**
+ * @brief 执行一次位置式 PID 计算并更新内部状态。
+ * @param pid PID 对象指针。
+ * @param measure 当前测量值。
+ * @return 本周期输出值（已限幅）。
+ */
 float PID_Pos_Compute(pid_pos_t *pid, float measure)
 {
     float output = 0.0f; // 1. 默认返回 0，确保异常情况下行为可控
@@ -141,6 +196,11 @@ float PID_Pos_Compute(pid_pos_t *pid, float measure)
     return output; // 8. 返回限幅后的有效输出
 }
 
+/**
+ * @brief 复位位置式 PID 内部状态量。
+ * @param pid PID 对象指针。
+ * @return 无。
+ */
 void PID_Pos_Reset(pid_pos_t *pid)
 {
     // 1. 空指针保护
@@ -158,3 +218,4 @@ void PID_Pos_Reset(pid_pos_t *pid)
         pid->output = 0.0f;
     }
 }
+

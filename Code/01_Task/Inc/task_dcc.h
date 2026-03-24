@@ -1,3 +1,13 @@
+﻿/**
+ * @file    task_dcc.h
+ * @brief   DCC 控制任务接口声明。
+ * @details
+ * 1. 文件作用：定义 DCC 任务状态机常量、任务入口和跨任务只读状态查询接口。
+ * 2. 上层绑定：`KeyTask` 通过信号量触发模式/运行态切换；`GpioTask`、`OledTask`、`StepperTask`
+ *    通过 `task_dcc_get_*` 读取状态，不直接改写内部状态机。
+ * 3. 下层依赖：`mod_motor`/`mod_sensor` 和 PID 组件用于执行底盘控制闭环。
+ * 4. 生命周期：该接口在系统启动后全局有效，内部状态由 `StartDccTask` 周期维护。
+ */
 #ifndef FINAL_GRADUATE_WORK_TASK_DCC_H
 #define FINAL_GRADUATE_WORK_TASK_DCC_H
 
@@ -25,12 +35,12 @@
 #define TASK_DCC_RUN_ON (2U)       /* 运行态：按当前mode执行底盘控制 */
 #define TASK_DCC_RUN_STOP (3U)     /* 停机告警态：由保护逻辑触发（红闪+蜂鸣） */
 
-/* KEY3单击：切换mode并强制回OFF */
-extern osSemaphoreId_t Sem_TaskChangeHandle;
-/* KEY3双击：运行状态切换请求 */
-extern osSemaphoreId_t Sem_ReadyToggleHandle;
-/* KEY2单击：DCC全重置请求（mode=0 + run_state=OFF） */
-extern osSemaphoreId_t Sem_DccHandle;
+/* KEY3 单击：切换 mode 并强制回 OFF（由 KeyTask 释放，DccTask 消费） */
+extern osSemaphoreId_t Sem_TaskChangeHandle; // RTOS 信号量句柄，用于任务同步。
+/* KEY3 双击：运行状态切换请求（由 KeyTask 释放，DccTask 消费） */
+extern osSemaphoreId_t Sem_ReadyToggleHandle; // RTOS 信号量句柄，用于任务同步。
+/* KEY2 单击：DCC 全重置请求（mode=0 + run_state=OFF） */
+extern osSemaphoreId_t Sem_DccHandle; // RTOS 信号量句柄，用于任务同步。
 
 void StartDccTask(void *argument);
 
@@ -43,3 +53,4 @@ uint8_t task_dcc_get_run_state(void);
 uint8_t task_dcc_get_ready(void);
 
 #endif /* FINAL_GRADUATE_WORK_TASK_DCC_H */
+

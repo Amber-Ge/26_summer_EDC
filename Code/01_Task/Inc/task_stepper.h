@@ -1,12 +1,13 @@
-/**
- ******************************************************************************
+﻿/**
  * @file    task_stepper.h
- * @brief   云台步进电机任务接口与参数定义
- *
- * 说明：
- * 1. 本任务负责读取 K230 视觉误差并控制 X/Y 两轴步进电机。
- * 2. 本头文件包含任务调度参数、控制参数、状态结构体和对外接口。
- ******************************************************************************
+ * @brief   步进电机任务接口声明。
+ * @details
+ * 1. 文件作用：定义步进任务调度参数、控制参数、状态快照结构和对外控制接口。
+ * 2. 上层绑定：`StartStepperTask` 由 RTOS 调度；运行时读取 `task_dcc_get_*` 状态并消费 K230 最新帧。
+ * 3. 下层依赖：`mod_stepper`（指令编解码与串口发送）、`mod_k230`（视觉误差输入）、
+ *    `mod_vofa`（状态上报）以及 UART 资源。
+ * 4. 资源边界：串口与互斥锁在 `InitTask`/`task_stepper_prepare_channels` 阶段注入，任务主循环只消费绑定结果。
+ * 5. 生命周期：任务常驻运行，按周期执行“收帧 -> 闭环 -> 保护 -> 上报”流程。
  */
 #ifndef FINAL_GRADUATE_WORK_TASK_STEPPER_H
 #define FINAL_GRADUATE_WORK_TASK_STEPPER_H
@@ -113,37 +114,37 @@
  */
 typedef struct
 {
-    bool configured;             /* 任务资源初始化是否完成 */
-    bool k230_bound;             /* K230 通道是否已绑定 */
-    bool vofa_bound;             /* VOFA 通道是否已绑定 */
-    bool x_axis_bound;           /* X 轴驱动通道是否已绑定 */
-    bool y_axis_bound;           /* Y 轴驱动通道是否已绑定 */
+    bool configured;             // 任务资源初始化是否完成
+    bool k230_bound;             // K230 通道是否已绑定
+    bool vofa_bound;             // VOFA 通道是否已绑定
+    bool x_axis_bound;           // X 轴驱动通道是否已绑定
+    bool y_axis_bound;           // Y 轴驱动通道是否已绑定
 
-    uint8_t dcc_mode;            /* 当前 DCC 模式（IDLE/STRAIGHT/TRACK） */
-    uint8_t dcc_run_state;       /* 当前 DCC 运行状态（OFF/PREPARE/ON/STOP） */
+    uint8_t dcc_mode;            // 当前 DCC 模式（IDLE/STRAIGHT/TRACK）
+    uint8_t dcc_run_state;       // 当前 DCC 运行状态（OFF/PREPARE/ON/STOP）
 
-    uint8_t motor1_id;           /* 最新帧 motor1_id */
-    int16_t err1;                /* 最新帧 err1（视觉误差） */
-    uint8_t motor2_id;           /* 最新帧 motor2_id */
-    int16_t err2;                /* 最新帧 err2（视觉误差） */
+    uint8_t motor1_id;           // 最新帧 motor1_id
+    int16_t err1;                // 最新帧 err1（视觉误差）
+    uint8_t motor2_id;           // 最新帧 motor2_id
+    int16_t err2;                // 最新帧 err2（视觉误差）
 
-    int32_t x_pos_pulse;         /* X 轴任务层估计位置（pulse） */
-    int32_t y_pos_pulse;         /* Y 轴任务层估计位置（pulse） */
-    uint8_t x_busy;              /* 预留字段 */
-    uint8_t y_busy;              /* 预留字段 */
+    int32_t x_pos_pulse;         // X 轴任务层估计位置（pulse）
+    int32_t y_pos_pulse;         // Y 轴任务层估计位置（pulse）
+    uint8_t x_busy;              // 预留字段
+    uint8_t y_busy;              // 预留字段
 
-    uint32_t x_last_pulse_cmd;   /* X 轴最近一次等效脉冲命令 */
-    uint32_t y_last_pulse_cmd;   /* Y 轴最近一次等效脉冲命令 */
-    uint16_t x_last_speed_cmd;   /* X 轴最近一次速度命令（rpm） */
-    uint16_t y_last_speed_cmd;   /* Y 轴最近一次速度命令（rpm） */
+    uint32_t x_last_pulse_cmd;   // X 轴最近一次等效脉冲命令
+    uint32_t y_last_pulse_cmd;   // Y 轴最近一次等效脉冲命令
+    uint16_t x_last_speed_cmd;   // X 轴最近一次速度命令（rpm）
+    uint16_t y_last_speed_cmd;   // Y 轴最近一次速度命令（rpm）
 
-    uint32_t frame_update_count; /* 接收到新视觉帧次数 */
-    uint32_t x_cmd_ok_count;     /* X 轴命令成功次数 */
-    uint32_t y_cmd_ok_count;     /* Y 轴命令成功次数 */
-    uint32_t x_cmd_drop_count;   /* X 轴命令失败/丢弃次数 */
-    uint32_t y_cmd_drop_count;   /* Y 轴命令失败/丢弃次数 */
-    uint32_t vofa_tx_ok_count;   /* VOFA 发送成功次数 */
-    uint32_t vofa_tx_drop_count; /* VOFA 发送失败次数 */
+    uint32_t frame_update_count; // 接收到新视觉帧次数
+    uint32_t x_cmd_ok_count;     // X 轴命令成功次数
+    uint32_t y_cmd_ok_count;     // Y 轴命令成功次数
+    uint32_t x_cmd_drop_count;   // X 轴命令失败/丢弃次数
+    uint32_t y_cmd_drop_count;   // Y 轴命令失败/丢弃次数
+    uint32_t vofa_tx_ok_count;   // VOFA 发送成功次数
+    uint32_t vofa_tx_drop_count; // VOFA 发送失败次数
 } task_stepper_state_t;
 
 /* ========================= 对外接口 ========================= */
@@ -174,3 +175,4 @@ bool task_stepper_send_position(uint8_t logic_id,
                                 bool sync_flag);
 
 #endif /* FINAL_GRADUATE_WORK_TASK_STEPPER_H */
+

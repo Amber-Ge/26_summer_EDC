@@ -1,7 +1,24 @@
+﻿/**
+ * @file    pid_inc.c
+ * @brief   增量式 PID 实现。
+ * @details
+ * 1. 文件作用：实现增量式 PID 初始化与迭代计算逻辑。
+ * 2. 上下层绑定：上层由运动控制流程调用；下层不依赖硬件接口。
+ */
 #include "pid_inc.h"
 
+/**
+ * @brief 初始化增量式 PID 对象参数并清空内部状态。
+ * @param pid PID 对象指针。
+ * @param kp 比例系数。
+ * @param ki 积分系数。
+ * @param kd 微分系数。
+ * @param out_max 输出上限（下限默认为 `-out_max`）。
+ * @return 无。
+ */
 void PID_Inc_Init(pid_inc_t *pid, float kp, float ki, float kd, float out_max)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     pid->kp = kp;
     pid->ki = ki;
     pid->kd = kd;
@@ -11,14 +28,27 @@ void PID_Inc_Init(pid_inc_t *pid, float kp, float ki, float kd, float out_max)
     PID_Inc_Reset(pid);
 }
 
+/**
+ * @brief 设置增量式 PID 目标值。
+ * @param pid PID 对象指针。
+ * @param target 目标值。
+ * @return 无。
+ */
 void PID_Inc_SetTarget(pid_inc_t *pid, float target)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     pid->target = target;
 }
 
+/**
+ * @brief 执行一次增量式 PID 迭代计算并更新输出。
+ * @param pid PID 对象指针。
+ * @param measure 当前测量值。
+ * @return 本次迭代后的输出值（已限幅）。
+ */
 float PID_Inc_Compute(pid_inc_t *pid, float measure)
 {
-    float delta_out;
+    float delta_out; // 本周期输出增量
     
     pid->measure = measure;
     
@@ -47,8 +77,14 @@ float PID_Inc_Compute(pid_inc_t *pid, float measure)
     return pid->output;
 }
 
+/**
+ * @brief 复位增量式 PID 内部状态量。
+ * @param pid PID 对象指针。
+ * @return 无。
+ */
 void PID_Inc_Reset(pid_inc_t *pid)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     pid->target = 0.0f;
     pid->measure = 0.0f;
     pid->error = 0.0f;

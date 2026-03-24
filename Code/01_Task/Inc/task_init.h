@@ -1,3 +1,10 @@
+﻿/**
+ * @file    task_init.h
+ * @brief   系统初始化任务接口声明。
+ * @details
+ * 1. 文件作用：声明系统初始化任务与初始化流程入口。
+ * 2. 上下层绑定：上层由 RTOS 启动流程触发；下层依赖各 Module/Driver 初始化接口。
+ */
 #ifndef FINAL_GRADUATE_WORK_TASK_INIT_H
 #define FINAL_GRADUATE_WORK_TASK_INIT_H
 
@@ -33,3 +40,4 @@ void StartInitTask(void *argument);
 void task_wait_init_done(void);
 
 #endif /* FINAL_GRADUATE_WORK_TASK_INIT_H */
+

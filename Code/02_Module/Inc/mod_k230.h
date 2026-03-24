@@ -1,17 +1,15 @@
-/**
- ******************************************************************************
+﻿/**
  * @file    mod_k230.h
- * @brief   K230 协议层模块（解耦版）接口定义
+ * @author  姜凯中
+ * @version v1.0.0
+ * @date    2026-03-23
+ * @brief   K230 协议模块接口（绑定驱动版）。
  * @details
- * 设计目标：
- * 1. 将“硬件绑定”从协议实现中分离，统一通过 bind 结构注入 UART/互斥锁/信号量。
- * 2. 将“协议校验策略”显式化，允许在绑定阶段选择校验算法。
- * 3. 保持协议层职责单一：仅处理 K230 帧收发与解析，不承担任务编排逻辑。
- *
- * 注意：
- * - 本文件已移除旧版全局单例风格接口（init/deinit/无 ctx API）。
- * - 使用者需要显式创建或获取 context，再进行 ctx_init + bind。
- ******************************************************************************
+ * 1. 文件作用：封装 K230 协议帧收发、解析、缓冲与上下文状态管理。
+ * 2. 解耦边界：协议格式与收发状态在本模块内闭环；不承载视觉业务决策与运动控制逻辑。
+ * 3. 上层绑定：`InitTask` 注入串口与同步资源，`StepperTask` 周期拉取最新有效帧。
+ * 4. 下层依赖：通过 `drv_uart` 收发字节流，可选绑定互斥锁/信号量实现多任务协作。
+ * 5. 生命周期：默认上下文需先 `ctx_init/bind`，运行期调用 `process` 推进协议状态机。
  */
 #ifndef FINAL_GRADUATE_WORK_MOD_K230_H
 #define FINAL_GRADUATE_WORK_MOD_K230_H
@@ -245,3 +243,5 @@ void mod_k230_clear_rx_buffer(mod_k230_ctx_t *ctx);
 bool mod_k230_get_latest_frame(mod_k230_ctx_t *ctx, mod_k230_frame_data_t *out_frame);
 
 #endif /* FINAL_GRADUATE_WORK_MOD_K230_H */
+
+

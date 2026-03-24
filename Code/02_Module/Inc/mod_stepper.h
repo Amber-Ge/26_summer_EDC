@@ -1,27 +1,15 @@
-/**
- ******************************************************************************
+﻿/**
  * @file    mod_stepper.h
- * @brief   步进电机协议模块（精简版，TX Only，绑定驱动）。
- *
+ * @author  姜凯中
+ * @version v1.0.0
+ * @date    2026-03-23
+ * @brief   步进电机协议模块接口（TX Only）。
  * @details
- * 本版本的设计目标与分层边界如下：
- *
- * 1. 只做“协议层发送”职责
- *    - 模块只负责将控制命令组帧并通过 UART DMA 发出。
- *    - 不再承担 RX DMA、ACK 解析、回零状态解析等接收侧职责。
- *
- * 2. 绑定驱动（Bind-Driven）
- *    - 所有硬件资源通过 bind 结构注入（UART、可选互斥锁、驱动地址）。
- *    - 不在模块内部硬编码某个具体串口。
- *
- * 3. 降低耦合
- *    - 协议层只认识“driver_addr（驱动地址）”，不保存 motor_id（逻辑电机ID）。
- *    - motor_id 到通道的映射由任务层处理（task_stepper）。
- *
- * 4. 运行语义
- *    - 接口返回 true 仅表示“DMA 已成功启动发送”。
- *    - 不表示驱动器是否已经执行完成（因为本版本无接收确认链路）。
- ******************************************************************************
+ * 1. 文件作用：封装步进驱动协议组帧和发送链路，提供速度/位置/停机等命令接口。
+ * 2. 解耦边界：本模块仅处理协议发送与上下文状态，不承载轨迹规划与视觉控制闭环。
+ * 3. 上层绑定：`StepperTask` 负责轴通道编排、限位策略与控制节拍。
+ * 4. 下层依赖：通过 `drv_uart` 发送字节流，并可绑定互斥锁保障多任务发送互斥。
+ * 5. 生命周期：上下文需先 `ctx_init` 或 `bind`，运行期调用 `process` 维护发送状态。
  */
 #ifndef FINAL_GRADUATE_WORK_MOD_STEPPER_H
 #define FINAL_GRADUATE_WORK_MOD_STEPPER_H
@@ -207,3 +195,5 @@ bool mod_stepper_position(mod_stepper_ctx_t *ctx, mod_stepper_dir_e dir, uint16_
 bool mod_stepper_stop(mod_stepper_ctx_t *ctx, bool sync_flag);
 
 #endif /* FINAL_GRADUATE_WORK_MOD_STEPPER_H */
+
+

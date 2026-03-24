@@ -1,18 +1,19 @@
-#include "mod_stepper.h"
-#include "mod_uart_guard.h"
-#include <string.h>
-
-/**
+﻿/**
  * @file mod_stepper.c
  * @brief 步进协议模块实现（仅发送，TX Only）。
  *
  * @details
- * 本实现的关键策略：
- * 1. 一个上下文只绑定一个 UART 与一个驱动地址。
- * 2. 绑定阶段通过 mod_uart_guard 申请/释放串口归属权。
- * 3. 不注册 RX 回调，不启动 RX DMA，不解析返回帧。
- * 4. 发送完成状态通过轮询 UART 空闲状态判定（mod_stepper_process）。
+ * 1. 文件作用：实现步进协议命令组帧、发送状态维护和上下文资源绑定。
+ * 2. 解耦边界：仅负责命令发送链路，不处理视觉闭环、轨迹规划或回读解析。
+ * 3. 上层绑定：`StepperTask` 负责节拍控制与命令调度，本模块只执行协议发送。
+ * 4. 下层依赖：`drv_uart` 执行发送，`mod_uart_guard` 负责 UART 独占仲裁。
+ * 5. 生命周期：一个上下文只绑定一个 UART 与驱动地址，支持重复绑定和资源回收。
  */
+
+#include "mod_stepper.h"
+#include "mod_uart_guard.h"
+#include <string.h>
+
 
 /**
  * @brief UART索引到上下文的映射表。
@@ -21,7 +22,7 @@
  * 1. 绑定冲突检查（同一个UART只允许一个上下文占用）。
  * 2. 支持 mod_stepper_process(NULL) 时轮询全部实例。
  */
-static mod_stepper_ctx_t *s_ctx_by_uart[MOD_STEPPER_MAX_UART_INSTANCES] = {0};
+static mod_stepper_ctx_t *s_ctx_by_uart[MOD_STEPPER_MAX_UART_INSTANCES] = {0}; // 模块变量，用于保存运行时状态。
 
 /**
  * @brief 将 UART 实例地址映射为固定索引。
@@ -30,7 +31,8 @@ static mod_stepper_ctx_t *s_ctx_by_uart[MOD_STEPPER_MAX_UART_INSTANCES] = {0};
  */
 static int8_t _get_uart_index(USART_TypeDef *instance)
 {
-    int8_t idx = -1;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    int8_t idx = -1; // 循环或计数变量
 
     switch ((uint32_t)instance)
     {
@@ -53,12 +55,13 @@ static int8_t _get_uart_index(USART_TypeDef *instance)
  */
 static int8_t _ctx_bound_uart_idx(const mod_stepper_ctx_t *ctx)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if (ctx == NULL)
     {
         return -1;
     }
 
-    for (uint16_t i = 0U; i < MOD_STEPPER_MAX_UART_INSTANCES; i++)
+    for (uint16_t i = 0U; i < MOD_STEPPER_MAX_UART_INSTANCES; i++) // 循环计数器
     {
         if (s_ctx_by_uart[i] == ctx)
         {
@@ -79,8 +82,14 @@ static int8_t _ctx_bound_uart_idx(const mod_stepper_ctx_t *ctx)
  * 4. huart 有效
  * 5. driver_addr 非 0
  */
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 static bool _ctx_ready(const mod_stepper_ctx_t *ctx)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     return ((ctx != NULL) &&
             ctx->inited &&
             ctx->bound &&
@@ -95,6 +104,7 @@ static bool _ctx_ready(const mod_stepper_ctx_t *ctx)
  */
 static bool _tx_lock(mod_stepper_ctx_t *ctx)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if ((ctx == NULL) || (ctx->bind.tx_mutex == NULL))
     {
         return true;
@@ -108,6 +118,7 @@ static bool _tx_lock(mod_stepper_ctx_t *ctx)
  */
 static void _tx_unlock(mod_stepper_ctx_t *ctx)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if ((ctx != NULL) && (ctx->bind.tx_mutex != NULL))
     {
         (void)osMutexRelease(ctx->bind.tx_mutex);
@@ -126,10 +137,16 @@ static void _tx_unlock(mod_stepper_ctx_t *ctx)
  * - 本模块有意不使用 HAL_UART_TxCpltCallback，降低全局回调耦合。
  * - 因此需要在 process() 中轮询硬件状态完成状态推进。
  */
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 无。
+ */
 static void _refresh_tx_state(mod_stepper_ctx_t *ctx)
 {
-    uint32_t now;
-    uint32_t delta;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint32_t now; // 局部业务变量
+    uint32_t delta; // 局部业务变量
 
     if (!_ctx_ready(ctx))
     {
@@ -175,9 +192,17 @@ static void _refresh_tx_state(mod_stepper_ctx_t *ctx)
  * - true：本次 DMA 已成功启动。
  * - false：未发送（忙、参数错、加锁失败、DMA启动失败等）。
  */
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param frame 函数输入参数，语义由调用场景决定。
+ * @param len 数据长度或数量参数。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 static bool _send_frame(mod_stepper_ctx_t *ctx, const uint8_t *frame, uint16_t len)
 {
-    bool sent = false;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    bool sent = false; // 局部业务变量
 
     if (!_ctx_ready(ctx) || (frame == NULL) || (len == 0U) || (len > MOD_STEPPER_TX_BUF_SIZE))
     {
@@ -216,8 +241,15 @@ static bool _send_frame(mod_stepper_ctx_t *ctx, const uint8_t *frame, uint16_t l
     return sent;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param bind 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_stepper_ctx_init(mod_stepper_ctx_t *ctx, const mod_stepper_bind_t *bind)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if (ctx == NULL)
     {
         return false;
@@ -242,16 +274,30 @@ bool mod_stepper_ctx_init(mod_stepper_ctx_t *ctx, const mod_stepper_bind_t *bind
     return true;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param bind 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_stepper_init(mod_stepper_ctx_t *ctx, const mod_stepper_bind_t *bind)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     return mod_stepper_ctx_init(ctx, bind);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param bind 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_stepper_bind(mod_stepper_ctx_t *ctx, const mod_stepper_bind_t *bind)
 {
-    int8_t new_idx;
-    int8_t old_idx;
-    bool claimed = false;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    int8_t new_idx; // 循环或计数变量
+    int8_t old_idx; // 循环或计数变量
+    bool claimed = false; // 局部业务变量
 
     /**
      * 1. 入参校验：
@@ -323,9 +369,15 @@ bool mod_stepper_bind(mod_stepper_ctx_t *ctx, const mod_stepper_bind_t *bind)
     return true;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 无。
+ */
 void mod_stepper_unbind(mod_stepper_ctx_t *ctx)
 {
-    int8_t idx;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    int8_t idx; // 循环或计数变量
 
     if ((ctx == NULL) || !ctx->inited)
     {
@@ -358,8 +410,14 @@ void mod_stepper_unbind(mod_stepper_ctx_t *ctx)
     ctx->tx_active_tick = 0U;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_stepper_is_bound(const mod_stepper_ctx_t *ctx)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     return _ctx_ready(ctx);
 }
 
@@ -372,8 +430,14 @@ const mod_stepper_bind_t *mod_stepper_get_bind(const mod_stepper_ctx_t *ctx)
     return &ctx->bind;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 无。
+ */
 void mod_stepper_process(mod_stepper_ctx_t *ctx)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     /**
      * 模式A：处理单个实例
      */
@@ -386,20 +450,36 @@ void mod_stepper_process(mod_stepper_ctx_t *ctx)
     /**
      * 模式B：处理全部实例
      */
-    for (uint16_t i = 0U; i < MOD_STEPPER_MAX_UART_INSTANCES; i++)
+    for (uint16_t i = 0U; i < MOD_STEPPER_MAX_UART_INSTANCES; i++) // 循环计数器
     {
         _refresh_tx_state(s_ctx_by_uart[i]);
     }
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param buf 输入/输出缓冲区指针。
+ * @param len 数据长度或数量参数。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_stepper_send_raw(mod_stepper_ctx_t *ctx, const uint8_t *buf, uint16_t len)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     return _send_frame(ctx, buf, len);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param enable 状态或模式控制参数。
+ * @param sync_flag 状态或模式控制参数。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_stepper_enable(mod_stepper_ctx_t *ctx, bool enable, bool sync_flag)
 {
-    uint8_t frame[6];
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint8_t frame[6]; // 使能命令帧缓存
 
     if (!_ctx_ready(ctx))
     {
@@ -415,9 +495,19 @@ bool mod_stepper_enable(mod_stepper_ctx_t *ctx, bool enable, bool sync_flag)
     return _send_frame(ctx, frame, 6U);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param dir 函数输入参数，语义由调用场景决定。
+ * @param vel_rpm 函数输入参数，语义由调用场景决定。
+ * @param acc 函数输入参数，语义由调用场景决定。
+ * @param sync_flag 状态或模式控制参数。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_stepper_velocity(mod_stepper_ctx_t *ctx, mod_stepper_dir_e dir, uint16_t vel_rpm, uint8_t acc, bool sync_flag)
 {
-    uint8_t frame[8];
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint8_t frame[8]; // 速度命令帧缓存
 
     if (!_ctx_ready(ctx))
     {
@@ -443,9 +533,21 @@ bool mod_stepper_velocity(mod_stepper_ctx_t *ctx, mod_stepper_dir_e dir, uint16_
     return _send_frame(ctx, frame, 8U);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param dir 函数输入参数，语义由调用场景决定。
+ * @param vel_rpm 函数输入参数，语义由调用场景决定。
+ * @param acc 函数输入参数，语义由调用场景决定。
+ * @param pulse 函数输入参数，语义由调用场景决定。
+ * @param absolute_mode 状态或模式控制参数。
+ * @param sync_flag 状态或模式控制参数。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_stepper_position(mod_stepper_ctx_t *ctx, mod_stepper_dir_e dir, uint16_t vel_rpm, uint8_t acc, uint32_t pulse, bool absolute_mode, bool sync_flag)
 {
-    uint8_t frame[13];
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint8_t frame[13]; // 位置命令帧缓存
 
     if (!_ctx_ready(ctx))
     {
@@ -476,9 +578,16 @@ bool mod_stepper_position(mod_stepper_ctx_t *ctx, mod_stepper_dir_e dir, uint16_
     return _send_frame(ctx, frame, 13U);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param sync_flag 状态或模式控制参数。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_stepper_stop(mod_stepper_ctx_t *ctx, bool sync_flag)
 {
-    uint8_t frame[5];
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint8_t frame[5]; // 停止命令帧缓存
 
     if (!_ctx_ready(ctx))
     {
@@ -492,4 +601,6 @@ bool mod_stepper_stop(mod_stepper_ctx_t *ctx, bool sync_flag)
     frame[4] = MOD_STEPPER_FRAME_TAIL;
     return _send_frame(ctx, frame, 5U);
 }
+
+
 

@@ -1,8 +1,11 @@
-/**
- ******************************************************************************
+﻿/**
  * @file    pid_inc.h
- * @brief   增量式 PID 控制器接口定义
- ******************************************************************************
+ * @brief   增量式 PID 接口定义。
+ * @details
+ * 1. 文件作用：声明增量式 PID 数据结构、参数与计算接口。
+ * 2. 解耦边界：仅提供算法计算，不依赖具体硬件执行器。
+ * 3. 上层绑定：`DccTask` 等控制流程按周期调用，输出增量控制量。
+ * 4. 生命周期：调用方负责 init/reset/set_target，并维护调用周期一致性。
  */
 #ifndef FINAL_GRADUATE_WORK_PID_INC_H
 #define FINAL_GRADUATE_WORK_PID_INC_H // 头文件防重复包含宏
@@ -62,3 +65,4 @@ float PID_Inc_Compute(pid_inc_t *pid, float measure);
 void PID_Inc_Reset(pid_inc_t *pid);
 
 #endif /* FINAL_GRADUATE_WORK_PID_INC_H */
+

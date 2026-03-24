@@ -1,0 +1,461 @@
+﻿# 注释一致性扫描报告
+
+- 扫描时间：2026-03-23 20:45:04
+- 扫描目录：Code
+- 扫描文件数：62
+- 问题总数：879
+- CSV明细：docs\scan_reports\comment_scan_20260323_204504.csv
+
+## 汇总
+
+| 类别 | 数量 |
+|---|---:|
+| 乱码注释/文本 | 488 |
+| 占位注释 | 362 |
+| 局部变量缺少//注释 | 29 |
+
+## 乱码注释/文本
+
+| 文件 | 行号 | 内容片段 |
+|---|---:|---|
+| Code\01_Task\Inc\task_dcc.h | 19 | /* ========================= DCC浠诲姟鏃跺簭鍙傛暟 ========================= */ |
+| Code\01_Task\Inc\task_dcc.h | 21 | #define TASK_DCC_PREPARE_MS (3000U) /* 棰勫鎬佺瓑寰呮椂闂达紙鍙屽嚮鍚庣瓑寰?绉掑啀杩涘叆ON锛?*/ |
+| Code\01_Task\Inc\task_dcc.h | 24 | #define TASK_DCC_MODE_IDLE (0U)      /* 浜や簰闈欐妯″紡锛氱數鏈轰笉鍏佽鍔ㄤ綔 */ |
+| Code\01_Task\Inc\task_dcc.h | 27 | #define TASK_DCC_MODE_TOTAL (3U)     /* 妯″紡鎬绘暟锛堢敤浜庢寜閿惊鐜垏鎹級 */ |
+| Code\01_Task\Inc\task_dcc.h | 29 | /* ========================= DCC杩愯鐘舵€佸畾涔?========================= */ |
+| Code\01_Task\Inc\task_dcc.h | 30 | #define TASK_DCC_RUN_OFF (0U)      /* 鍏抽棴鎬侊細鐢垫満鍋滄満锛屽彲鍒囨ā寮?*/ |
+| Code\01_Task\Inc\task_dcc.h | 32 | #define TASK_DCC_RUN_ON (2U)       /* 杩愯鎬侊細鎸夊綋鍓峬ode鎵ц搴曠洏鎺у埗 */ |
+| Code\01_Task\Inc\task_dcc.h | 33 | #define TASK_DCC_RUN_STOP (3U)     /* 鍋滄満鍛婅鎬侊細鐢变繚鎶ら€昏緫瑙﹀彂锛堢孩闂?铚傞福锛?*/ |
+| Code\01_Task\Inc\task_dcc.h | 35 | /* KEY3鍗曞嚮锛氬垏鎹ode骞跺己鍒跺洖OFF */ |
+| Code\01_Task\Inc\task_dcc.h | 37 | /* KEY3鍙屽嚮锛氳繍琛岀姸鎬佸垏鎹㈣姹?*/ |
+| Code\01_Task\Inc\task_dcc.h | 39 | /* KEY2鍗曞嚮锛欴CC鍏ㄩ噸缃姹傦紙mode=0 + run_state=OFF锛?*/ |
+| Code\01_Task\Inc\task_dcc.h | 50 | /* 鑾峰彇褰撳墠閫夋嫨鐨勫簳鐩樻ā寮忥紙0/1/2锛?*/ |
+| Code\01_Task\Inc\task_dcc.h | 52 | /* 鑾峰彇褰撳墠杩愯鐘舵€侊紙OFF/PREPARE/ON/STOP锛?*/ |
+| Code\01_Task\Inc\task_dcc.h | 55 | /* 鍏煎鏃ф帴鍙ｏ細浠呭綋杩愯鐘舵€佷负ON鏃惰繑鍥?锛屽惁鍒欒繑鍥? */ |
+| Code\01_Task\Inc\task_gpio.h | 24 | /* 浠绘剰鎸夐敭鍙嶉锛氶粍鐏剦鍐叉椂闀?*/ |
+| Code\01_Task\Inc\task_gpio.h | 26 | /* 浠绘剰鎸夐敭鍙嶉锛氳渹楦ｅ櫒鐭福鏃堕暱 */ |
+| Code\01_Task\Inc\task_gpio.h | 29 | /* ON鎬侊細缁跨伅闂儊鍛ㄦ湡 */ |
+| Code\01_Task\Inc\task_gpio.h | 47 | /* 鎸夐敭鍙嶉淇″彿閲忥細鐢盞eyTask閲婃斁锛孏pioTask娑堣垂銆?*/ |
+| Code\01_Task\Inc\task_init.h | 14 | * @brief InitTask 鍏ュ彛鍑芥暟銆? * |
+| Code\01_Task\Inc\task_init.h | 16 | * 璇ヤ换鍔″彧璐熻矗鈥滅郴缁熶竴娆℃€у垵濮嬪寲鈥濓細 |
+| Code\01_Task\Inc\task_init.h | 17 | * 1. 鏄惧紡缁戝畾鎵€鏈夐潪 UART / 闈?OLED 鐨勭‖浠舵槧灏勶紙LED銆佺户鐢靛櫒銆佺數鏈恒€佸惊杩逛紶鎰熷櫒锛夈€? * 2. 璋冪敤瀵瑰簲妯″潡鍒濆鍖栨帴鍙ｏ紝寤虹珛绋冲畾鐨勪笂鐢电姸鎬併€? * 3. 鍒濆鍖栧畬鎴... |
+| Code\01_Task\Inc\task_init.h | 18 | * @param argument 浠诲姟鍙傛暟锛堝綋鍓嶅疄鐜版湭浣跨敤锛夈€? */ |
+| Code\01_Task\Inc\task_init.h | 22 | * @brief 缁熶竴鐨勨€滃垵濮嬪寲瀹屾垚绛夊緟鈥濋棬鎺у嚱鏁般€? * |
+| Code\01_Task\Inc\task_init.h | 24 | * 鍏朵粬涓氬姟浠诲姟锛圙PIO銆並EY銆丏CC銆丳C銆丼TEPPER銆乀EST銆丏EFAULT锛夊湪杩涘叆鍚勮嚜涓诲惊鐜墠 |
+| Code\01_Task\Inc\task_init.h | 25 | * 閮藉簲鍏堣皟鐢ㄨ鍑芥暟銆傚嚱鏁拌涓哄涓嬶細 |
+| Code\01_Task\Inc\task_init.h | 26 | * 1. 闃诲绛夊緟 Sem_Init锛堢敱 InitTask 鍦ㄥ垵濮嬪寲瀹屾垚鍚庨噴鏀撅級銆? * 2. 涓€鏃︽垚鍔熻幏鍙栦俊鍙烽噺锛岀珛鍗冲啀閲婃斁涓€娆★紝褰㈡垚鈥滈椄闂ㄥ父寮€鈥濇晥鏋溿€? * 3. 鍚庣画浠讳綍浠诲姟璋冪敤... |
+| Code\01_Task\Inc\task_init.h | 28 | * 璇ヨ璁℃湰璐ㄦ槸鈥滃崟娆″垵濮嬪寲 -> 澶氫换鍔″叡浜€氳繃鏉冣€濓紝閬垮厤姣忎釜浠诲姟閲嶅鍒濆鍖栫‖浠躲€? */ |
+| Code\01_Task\Inc\task_key.h | 30 | /* 浠绘剰鎸夐敭浜嬩欢鍙嶉淇″彿閲忥紙鐢盞eyTask閲婃斁锛孏pioTask鐢ㄤ簬榛勭伅鐭棯锛?*/ |
+| Code\01_Task\Inc\task_oled.h | 11 | * @brief   OLED 鏄剧ず浠诲姟鎺ュ彛瀹氫箟 |
+| Code\01_Task\Inc\task_oled.h | 13 | * 璇ヤ换鍔¤礋璐ｅ懆鏈熷埛鏂?OLED 鍐呭锛屽苟鎸夎瀹氬懆鏈熸洿鏂扮數姹犻噰鏍锋暟鎹樉绀恒€? |
+| Code\01_Task\Inc\task_oled.h | 23 | /** OLED 鍒锋柊鍛ㄦ湡锛堝崟浣嶏細姣锛?*/ |
+| Code\01_Task\Inc\task_oled.h | 26 | /** 鐢垫睜閲囨牱鍛ㄦ湡锛堝崟浣嶏細绉掞級 */ |
+| Code\01_Task\Inc\task_oled.h | 34 | * @param argument 浠诲姟鍙傛暟鎸囬拡锛堝綋鍓嶅疄鐜颁腑閫氬父鏈娇鐢級 |
+| Code\01_Task\Inc\task_stepper.h | 11 | * @brief   浜戝彴姝ヨ繘鐢垫満浠诲姟鎺ュ彛涓庡弬鏁板畾涔? * |
+| Code\01_Task\Inc\task_stepper.h | 12 | * 璇存槑锛? * 1. 鏈换鍔¤礋璐ｈ鍙?K230 瑙嗚璇樊骞舵帶鍒?X/Y 涓よ酱姝ヨ繘鐢垫満銆? * 2. 鏈ご鏂囦欢鍖呭惈浠诲姟璋冨害鍙傛暟銆佹帶鍒跺弬鏁般€佺姸鎬佺粨鏋勪綋鍜屽澶栨帴鍙ｃ€? *************... |
+| Code\01_Task\Inc\task_stepper.h | 23 | /* ========================= 浠诲姟璋冨害鍙傛暟 ========================= */ |
+| Code\01_Task\Inc\task_stepper.h | 25 | /* Stepper 浠诲姟鎵ц鍛ㄦ湡锛堟绉掞級 */ |
+| Code\01_Task\Inc\task_stepper.h | 31 | /* 浠诲姟鍚姩寮€鍏筹細1=鍚姩鍚庢甯歌繍琛岋紝0=鍚姩鍚庢寕璧?*/ |
+| Code\01_Task\Inc\task_stepper.h | 34 | /* 鍙戦€佸埌 VOFA 鐨勬洸绾挎爣绛撅紙褰撳墠鍙戦€?err1/err2锛?*/ |
+| Code\01_Task\Inc\task_stepper.h | 39 | /* 涓?K230 鍗忚绾﹀畾锛歩d=1 涓?X 杞达紝id=2 涓?Y 杞?*/ |
+| Code\01_Task\Inc\task_stepper.h | 43 | /* 杞翠娇鑳藉紑鍏筹細鍙敤浜庤仈璋冩椂鍗曠嫭灞忚斀鏌愪竴杞翠笅鍙?*/ |
+| Code\01_Task\Inc\task_stepper.h | 47 | /* ========================= 涓插彛涓庨┍鍔ㄥ湴鍧€ ========================= */ |
+| Code\01_Task\Inc\task_stepper.h | 49 | /* 姝ヨ繘椹卞姩鍦板潃锛堝綋鍓嶄袱杞撮兘涓?1锛?*/ |
+| Code\01_Task\Inc\task_stepper.h | 53 | /* ========================= 鎺у埗鍙傛暟锛堝彲璋冿級 ========================= */ |
+| Code\01_Task\Inc\task_stepper.h | 55 | /* 缁嗗垎涓庢瘡鍦堣剦鍐叉暟锛?00 * 16 = 3200 pulse/rev */ |
+| Code\01_Task\Inc\task_stepper.h | 58 | /* 閫熷害妯″紡鏈€澶ч€熷害锛坮pm锛?*/ |
+| Code\01_Task\Inc\task_stepper.h | 61 | /* 浣嶇疆妯″紡鏈€澶ч€熷害锛坮pm锛?*/ |
+| Code\01_Task\Inc\task_stepper.h | 64 | /* 浣嶇疆 PID 鍙傛暟锛堣緭鍑哄崟浣嶏細姣忓懆鏈熻剦鍐叉暟锛?*/ |
+| Code\01_Task\Inc\task_stepper.h | 69 | /* PID 杈撳嚭闄愬箙锛堟瘡鍛ㄦ湡鏈€澶ц剦鍐插懡浠わ級 */ |
+| Code\01_Task\Inc\task_stepper.h | 75 | /* 璇樊姝诲尯锛殀err\| < deadband 鏃跺仠鏈?*/ |
+| Code\01_Task\Inc\task_stepper.h | 78 | /* 灏忚宸槇鍊硷細\|err\| <= 闃堝€兼椂浠呬娇鐢?Kp锛堝叧闂Н鍒嗭級 */ |
+| Code\01_Task\Inc\task_stepper.h | 81 | /* 灏忚宸尯 Kp 澧炵泭锛堝崟浣嶏細pulse/cycle per err锛?*/ |
+| Code\01_Task\Inc\task_stepper.h | 84 | /* mode1锛圫TRAIGHT锛夊墠棣堝紑鍏充笌鍙傛暟 |
+| Code\01_Task\Inc\task_stepper.h | 85 | * 鍓嶉鏉ユ簮锛氬簳鐩樼紪鐮佸櫒鐩搁偦閲囨牱宸垎 |
+| Code\01_Task\Inc\task_stepper.h | 86 | * 鍓嶉杈撳嚭锛氫笌 PID 杈撳嚭鐩稿姞鍚庝綔涓烘渶缁堣剦鍐插懡浠? */ |
+| Code\01_Task\Inc\task_stepper.h | 92 | /* Y 杞村浐瀹氫綅缃祴璇曟ā寮忥紙璋冭瘯寮€鍏筹級 */ |
+| Code\01_Task\Inc\task_stepper.h | 98 | /* X 杞磋蒋闄愪綅鑼冨洿锛歔-800, +800] */ |
+| Code\01_Task\Inc\task_stepper.h | 101 | /* Y 杞磋蒋闄愪綅鑼冨洿锛歔-400, +400] */ |
+| Code\01_Task\Inc\task_stepper.h | 104 | /* 棰勭暀鍙傛暟锛氬姩浣滃畬鎴愰澶栦繚鎶ゆ椂闂达紙褰撳墠鏈娇鐢級 */ |
+| Code\01_Task\Inc\task_stepper.h | 107 | /* 鏂瑰悜鍙嶇浉寮€鍏筹細0=涓嶅弽鐩革紝1=鍙嶇浉 */ |
+| Code\01_Task\Inc\task_stepper.h | 111 | /* ========================= 鐘舵€佺粨鏋勪綋 ========================= */ |
+| Code\01_Task\Inc\task_stepper.h | 114 | * @brief Stepper 浠诲姟鍙鐘舵€佸揩鐓? */ |
+| Code\01_Task\Inc\task_stepper.h | 117 | bool configured;             /* 浠诲姟璧勬簮鍒濆鍖栨槸鍚﹀畬鎴?*/ |
+| Code\01_Task\Inc\task_stepper.h | 120 | bool x_axis_bound;           /* X 杞撮┍鍔ㄩ€氶亾鏄惁宸茬粦瀹?*/ |
+| Code\01_Task\Inc\task_stepper.h | 121 | bool y_axis_bound;           /* Y 杞撮┍鍔ㄩ€氶亾鏄惁宸茬粦瀹?*/ |
+| Code\01_Task\Inc\task_stepper.h | 123 | uint8_t dcc_mode;            /* 褰撳墠 DCC 妯″紡锛圛DLE/STRAIGHT/TRACK锛?*/ |
+| Code\01_Task\Inc\task_stepper.h | 124 | uint8_t dcc_run_state;       /* 褰撳墠 DCC 杩愯鐘舵€侊紙OFF/PREPARE/ON/STOP锛?*/ |
+| Code\01_Task\Inc\task_stepper.h | 126 | uint8_t motor1_id;           /* 鏈€鏂板抚 motor1_id */ |
+| Code\01_Task\Inc\task_stepper.h | 127 | int16_t err1;                /* 鏈€鏂板抚 err1锛堣瑙夎宸級 */ |
+| Code\01_Task\Inc\task_stepper.h | 128 | uint8_t motor2_id;           /* 鏈€鏂板抚 motor2_id */ |
+| Code\01_Task\Inc\task_stepper.h | 129 | int16_t err2;                /* 鏈€鏂板抚 err2锛堣瑙夎宸級 */ |
+| Code\01_Task\Inc\task_stepper.h | 131 | int32_t x_pos_pulse;         /* X 杞翠换鍔″眰浼拌浣嶇疆锛坧ulse锛?*/ |
+| Code\01_Task\Inc\task_stepper.h | 132 | int32_t y_pos_pulse;         /* Y 杞翠换鍔″眰浼拌浣嶇疆锛坧ulse锛?*/ |
+| Code\01_Task\Inc\task_stepper.h | 133 | uint8_t x_busy;              /* 棰勭暀瀛楁 */ |
+| Code\01_Task\Inc\task_stepper.h | 134 | uint8_t y_busy;              /* 棰勭暀瀛楁 */ |
+| Code\01_Task\Inc\task_stepper.h | 136 | uint32_t x_last_pulse_cmd;   /* X 杞存渶杩戜竴娆＄瓑鏁堣剦鍐插懡浠?*/ |
+| Code\01_Task\Inc\task_stepper.h | 137 | uint32_t y_last_pulse_cmd;   /* Y 杞存渶杩戜竴娆＄瓑鏁堣剦鍐插懡浠?*/ |
+| Code\01_Task\Inc\task_stepper.h | 138 | uint16_t x_last_speed_cmd;   /* X 杞存渶杩戜竴娆￠€熷害鍛戒护锛坮pm锛?*/ |
+| Code\01_Task\Inc\task_stepper.h | 139 | uint16_t y_last_speed_cmd;   /* Y 杞存渶杩戜竴娆￠€熷害鍛戒护锛坮pm锛?*/ |
+| Code\01_Task\Inc\task_stepper.h | 141 | uint32_t frame_update_count; /* 鎺ユ敹鍒版柊瑙嗚甯ф鏁?*/ |
+| Code\01_Task\Inc\task_stepper.h | 142 | uint32_t x_cmd_ok_count;     /* X 杞村懡浠ゆ垚鍔熸鏁?*/ |
+| Code\01_Task\Inc\task_stepper.h | 143 | uint32_t y_cmd_ok_count;     /* Y 杞村懡浠ゆ垚鍔熸鏁?*/ |
+| Code\01_Task\Inc\task_stepper.h | 146 | uint32_t vofa_tx_ok_count;   /* VOFA 鍙戦€佹垚鍔熸鏁?*/ |
+| Code\01_Task\Inc\task_stepper.h | 147 | uint32_t vofa_tx_drop_count; /* VOFA 鍙戦€佸け璐ユ鏁?*/ |
+| Code\01_Task\Inc\task_stepper.h | 150 | /* ========================= 瀵瑰鎺ュ彛 ========================= */ |
+| Code\01_Task\Inc\task_stepper.h | 170 | * @brief 瀵瑰閫熷害鍛戒护鎺ュ彛锛堝唴閮ㄤ細闄愬箙鍒?TASK_STEPPER_VEL_MAX_RPM锛? */ |
+| Code\01_Task\Inc\task_stepper.h | 178 | * @brief 瀵瑰浣嶇疆鍛戒护鎺ュ彛锛堝唴閮ㄤ細闄愬箙鍒?TASK_STEPPER_POS_MAX_RPM锛? */ |
+| Code\01_Task\Inc\task_test.h | 11 | * @brief   娴嬭瘯浠诲姟鎺ュ彛瀹氫箟 |
+| Code\01_Task\Inc\task_test.h | 13 | * 褰撳墠鐢ㄤ簬鍛ㄦ湡璇诲彇 12 璺惊杩圭姸鎬佸苟閫氳繃 VOFA 涓婃姤銆? |
+| Code\01_Task\Inc\task_test.h | 27 | #define TASK_TEST_PERIOD_MS    (1000000U)  // 娴嬭瘯浠诲姟閲囨牱/鍙戦€佸懆鏈燂紙ms锛? |
+| Code\01_Task\Inc\task_test.h | 28 | #define TASK_TEST_PREPARE_MS   (5000U)  // 棰勭暀锛氭祴璇曞惎鍔ㄥ墠鍑嗗鏃堕棿锛坢s锛? |
+| Code\01_Task\Inc\task_test.h | 29 | #define TASK_TEST_TARGET_SPEED (40)     // 棰勭暀锛氭祴璇曢粯璁ょ洰鏍囬€熷害 |
+| Code\01_Task\Src\task_dcc.c | 12 | #define TASK_DCC_GRAY_STOP_COUNT (3U)      /* 鐩寸嚎妯″紡锛氳繛缁粦绾胯Е鍙戦槇鍊?*/ |
+| Code\01_Task\Src\task_dcc.c | 13 | #define TASK_DCC_STARTUP_DELAY_MS (3000U)  /* 涓婄數鍚庝换鍔￠澶栧欢鏃讹紝閬垮厤鍚姩鐬€?*/ |
+| Code\01_Task\Src\task_dcc.c | 16 | /* 褰撳墠妯″紡锛?=IDLE, 1=STRAIGHT, 2=TRACK */ |
+| Code\01_Task\Src\task_dcc.c | 18 | /* 褰撳墠杩愯鐘舵€侊細OFF / PREPARE / ON / STOP */ |
+| Code\01_Task\Src\task_dcc.c | 38 | /* 娴偣鍗犵┖姣旇浆鏁村瀷鍛戒护锛堝惈闄愬箙涓庡洓鑸嶄簲鍏ワ級 */ |
+| Code\01_Task\Src\task_dcc.c | 56 | /* 绔嬪嵆鍋滄鍙岀數鏈?*/ |
+| Code\01_Task\Src\task_dcc.c | 63 | /* 缁熶竴澶嶄綅PID鍐呴儴鐘舵€?*/ |
+| Code\01_Task\Src\task_dcc.c | 77 | /* 姣杞瑃ick锛屽悜涓婂彇鏁达紝涓旀渶灏戜负1 tick */ |
+| Code\01_Task\Src\task_dcc.c | 96 | /* Tick姣旇緝锛歯ow鏄惁鍒拌揪target锛堟敮鎸佸洖缁曪級 */ |
+| Code\01_Task\Src\task_dcc.c | 102 | /* 杩涘叆OFF锛氬仠鏈?+ PID澶嶄綅 + 榛戠嚎璁℃暟娓呴浂 */ |
+| Code\01_Task\Src\task_dcc.c | 119 | /* 杩涘叆PREPARE锛氱瓑寰?绉掞紝涓嶈緭鍑虹數鏈?*/ |
+| Code\01_Task\Src\task_dcc.c | 136 | /* 杩涘叆ON锛氬厑璁告寜褰撳墠mode鎵ц鎺у埗 */ |
+| Code\01_Task\Src\task_dcc.c | 153 | /* 杩涘叆STOP锛氬仠鏈轰繚鎶ゆ€侊紝鍚屾椂mode鍥炲埌0 */ |
+| Code\01_Task\Src\task_dcc.c | 171 | /* 璇诲彇12璺伆搴︾姸鎬侊紝鍒ゆ柇鏄惁浠绘剰涓€璺娴嬪埌榛戠嚎 */ |
+| Code\01_Task\Src\task_dcc.c | 193 | /* 鐩寸嚎妯″紡鎺у埗锛氫綅缃幆 + 閫熷害鐜紱鏀寔1绉掍紶鎰熷櫒淇濇姢绐?*/ |
+| Code\01_Task\Src\task_dcc.c | 219 | /* 淇濇姢绐楀唴锛氬拷鐣ヤ紶鎰熷櫒鎬ュ仠锛岃鏁板綊闆?*/ |
+| Code\01_Task\Src\task_dcc.c | 224 | /* 杩炵画3娆℃娴嬪埌浠绘剰榛戠嚎锛氳繘鍏TOP骞跺洖mode0 */ |
+| Code\01_Task\Src\task_dcc.c | 267 | /* 寰抗妯″紡鎺у埗锛氭寜weight鍒嗛厤宸﹀彸鐩爣閫熷害 + 閫熷害鐜?*/ |
+| Code\01_Task\Src\task_dcc.c | 292 | /* 鏈璇诲彇鍒版湁鏁堢數骞筹細鍒锋柊鈥滀笂涓€娆℃湁鏁堟潈閲嶁€?*/ |
+| Code\01_Task\Src\task_dcc.c | 299 | /* 鏈鏈鍙栧埌鏈夋晥鐢靛钩锛氭部鐢ㄤ笂涓€娆℃湁鏁堟潈閲?*/ |
+| Code\01_Task\Src\task_dcc.c | 306 | /* 灏氭棤鏈夋晥鍘嗗彶鍊兼椂锛岄€€鍖栦负0 */ |
+| Code\01_Task\Src\task_dcc.c | 369 | pid_pos_t pos_pid;                  /* 鐩寸嚎妯″紡澶栫幆锛氫綅缃幆PID */ |
+| Code\01_Task\Src\task_dcc.c | 371 | pid_inc_t right_speed_pid;          /* 鍙宠疆閫熷害鐜疨ID */ |
+| Code\01_Task\Src\task_dcc.c | 375 | uint32_t prepare_start_tick = 0U;   /* PREPARE寮€濮媡ick */ |
+| Code\01_Task\Src\task_dcc.c | 379 | float track_last_valid_weight = 0.0f; /* 寰抗妯″紡锛氫笂涓€娆℃湁鏁堟潈閲?*/ |
+| Code\01_Task\Src\task_dcc.c | 380 | uint8_t track_has_valid_weight = 0U;  /* 寰抗妯″紡锛氭槸鍚﹀凡鏈夋湁鏁堟潈閲?*/ |
+| Code\01_Task\Src\task_dcc.c | 418 | /* KEY2鍗曞嚮锛歮ode涓庤繍琛屾€佸叏閲嶇疆 */ |
+| Code\01_Task\Src\task_dcc.c | 429 | /* 娓呯悊娈嬬暀鎺у埗璇锋眰锛岄伩鍏嶉噸缃悗绔嬪嵆琚棫浜嬩欢鎷夎蛋 */ |
+| Code\01_Task\Src\task_dcc.c | 434 | /* KEY3鍗曞嚮锛氬垏mode骞跺洖OFF */ |
+| Code\01_Task\Src\task_dcc.c | 445 | /* KEY3鍙屽嚮锛歄FF->PREPARE(浠卪ode!=0)锛孭REPARE/ON->OFF */ |
+| Code\01_Task\Src\task_dcc.c | 470 | /* STOP鎬佷笅鍙屽嚮涓嶇洿鎺ヨ繘PREPARE */ |
+| Code\01_Task\Src\task_dcc.c | 512 | /* 鐩寸嚎妯″紡棣栨杩涘叆ON鏃讹紝寮€鍚?绉掍繚鎶ょ獥 */ |
+| Code\01_Task\Src\task_dcc.c | 530 | /* 闈炲惊杩规ā寮忎笅涓嶄繚鐣欏惊杩瑰巻鍙叉潈閲?*/ |
+| Code\01_Task\Src\task_gpio.c | 13 | /* 姣杞崲涓簍ick锛屽悜涓婂彇鏁翠笖鏈€灏? tick */ |
+| Code\01_Task\Src\task_gpio.c | 32 | /* Tick姣旇緝锛歯ow鏄惁宸茬粡鍒拌揪target锛堟敮鎸佸洖缁曪級 */ |
+| Code\01_Task\Src\task_gpio.c | 38 | /* OFF/PREPARE缁熶竴娓呴浂杈撳嚭锛岄槻姝㈢姸鎬佹畫鐣?*/ |
+| Code\01_Task\Src\task_gpio.c | 63 | uint32_t key_beep_deadline = 0U;    /* 鎸夐敭铚傞福缁撴潫鏃跺埢 */ |
+| Code\01_Task\Src\task_gpio.c | 64 | uint32_t green_toggle_tick = 0U;    /* 涓嬫缁跨伅缈昏浆鏃跺埢 */ |
+| Code\01_Task\Src\task_gpio.c | 68 | uint8_t run_state;                  /* 褰撳墠DCC杩愯鐘舵€?*/ |
+| Code\01_Task\Src\task_gpio.c | 71 | int green_led_on = 0;               /* 褰撳墠缁跨伅閫昏緫鐘舵€?*/ |
+| Code\01_Task\Src\task_gpio.c | 72 | int red_led_on = 0;                 /* 褰撳墠绾㈢伅閫昏緫鐘舵€?*/ |
+| Code\01_Task\Src\task_gpio.c | 73 | int buzzer_on = 0;                  /* STOP铚傞福鑺傚閫昏緫鐘舵€?*/ |
+| Code\01_Task\Src\task_gpio.c | 75 | int laser_output_on = 0;            /* 婵€鍏夌户鐢靛櫒褰撳墠鐗╃悊杈撳嚭鐘舵€?*/ |
+| Code\01_Task\Src\task_gpio.c | 98 | /* 浠绘剰鎸夐敭浜嬩欢锛氶粍鐏煭闂?*/ |
+| Code\01_Task\Src\task_gpio.c | 123 | /* ON鎬侊細缁跨伅鎸佺画闂儊锛岀孩鐏?铚傞福鍏抽棴 */ |
+| Code\01_Task\Src\task_gpio.c | 163 | /* STOP鎬侊細绾㈢伅闂儊 + 铚傞福鍣ㄧ煭鍝嶅惊鐜紝缁跨伅鍏抽棴 */ |
+| Code\01_Task\Src\task_gpio.c | 224 | /* OFF/PREPARE锛氫笉杈撳嚭缁跨伅/绾㈢伅/铚傞福 */ |
+| Code\01_Task\Src\task_key.c | 11 | /* KEY3鍗曞嚮锛氬垏鎹CC妯″紡 */ |
+| Code\01_Task\Src\task_key.c | 13 | /* KEY3鍙屽嚮锛氳姹侱CC杩愯鐘舵€佸垏鎹紙OFF/PREPARE/ON锛?*/ |
+| Code\01_Task\Src\task_key.c | 15 | /* KEY2鍗曞嚮锛氳姹侱CC鍏ㄩ噸缃紙mode涓庤繍琛屾€佸叏閮ㄥ浣嶏級 */ |
+| Code\01_Task\Src\task_key.c | 18 | /* 鍒ゆ柇鏄惁涓衡€滄湁鎸夐敭浜嬩欢鈥?*/ |
+| Code\01_Task\Src\task_key.c | 32 | mod_key_event_e evt; /* 褰撳墠鎵弿寰楀埌鐨勬寜閿簨浠?*/ |
+| Code\01_Task\Src\task_key.c | 42 | /* 浠绘剰鎸夐敭浜嬩欢閮借Е鍙戜竴娆￠粍鐏弽棣堬紙GPIO浠诲姟娑堣垂璇ヤ俊鍙烽噺锛?*/ |
+| Code\01_Task\Src\task_key.c | 48 | /* 涓氬姟鎸夐敭鏄犲皠锛氬彧浣跨敤KEY3鎺у埗DCC */ |
+| Code\01_Task\Src\task_key.c | 71 | /* 鍏朵粬鎸夐敭浠呬繚鐣欓粍鐏弽棣堬紝涓嶇粦瀹欴CC鎺у埗鍔ㄤ綔 */ |
+| Code\01_Task\Src\task_test.c | 28 | * @brief 娴嬭瘯浠诲姟锛氭瘡 1 绉掑彂閫佹潈閲嶄笌宸﹀彸鐩爣閫熷害 |
+| Code\01_Task\Src\task_test.c | 30 | * 1. 璇诲彇寰抗鏉冮噸鍊?weight锛? |
+| Code\01_Task\Src\task_test.c | 31 | * 2. 鍙傝€?DCC 鐩爣閫熷害鍒嗛厤鍏紡璁＄畻宸﹀彸鐩爣閫熷害锛? |
+| Code\01_Task\Src\task_test.c | 32 | * 3. 浠呭仛鐩爣鍊兼帹绠楋紝涓嶈皟鐢?PID 璁＄畻銆? |
+| Code\02_Module\Src\mod_battery.c | 12 | /* 鐢垫睜鐢靛帇缂撳瓨鍊硷紙鍗曚綅锛歏锛?*/ |
+| Code\02_Module\Src\mod_battery.c | 14 | /* 褰撳墠缁戝畾鐨凙DC鍙ユ焺 */ |
+| Code\02_Module\Src\mod_battery.c | 16 | /* 缁戝畾鐘舵€佹爣蹇楋細true琛ㄧず宸茬粦瀹氾紝false琛ㄧず鏈粦瀹?*/ |
+| Code\02_Module\Src\mod_battery.c | 27 | // 1. 鍙傛暟鏍￠獙锛氬彞鏌勪负绌烘椂鐩存帴杩斿洖澶辫触銆? |
+| Code\02_Module\Src\mod_battery.c | 33 | // 2. 淇濆瓨ADC鍙ユ焺骞惰缃粦瀹氱姸鎬併€? |
+| Code\02_Module\Src\mod_battery.c | 37 | // 3. 杩斿洖缁戝畾鎴愬姛銆? |
+| Code\02_Module\Src\mod_battery.c | 49 | // 1. 娓呯┖鍙ユ焺銆? |
+| Code\02_Module\Src\mod_battery.c | 52 | // 2. 娓呯┖缁戝畾鐘舵€併€? |
+| Code\02_Module\Src\mod_battery.c | 64 | // 1. 鍙湁鈥滅姸鎬佷负宸茬粦瀹?+ 鍙ユ焺涓嶄负绌衡€濇墠鍒ゅ畾涓哄凡缁戝畾銆? |
+| Code\02_Module\Src\mod_battery.c | 91 | // 1. 寮哄埗缁戝畾妫€鏌ワ細鏈粦瀹氭椂鐩存帴澶辫触锛屼笉鍐嶄娇鐢ㄩ粯璁DC鍥炶惤銆? |
+| Code\02_Module\Src\mod_battery.c | 97 | // 2. 閫氳繃椹卞姩灞傝鍙朅DC骞冲潎鍘熷鍊笺€? |
+| Code\02_Module\Src\mod_battery.c | 100 | // 3. 鎶婂師濮嬪€兼崲绠楁垚ADC寮曡剼鐢靛帇銆? |
+| Code\02_Module\Src\mod_battery.c | 103 | // 4. 鎸夊垎鍘嬫瘮杩樺師鐢垫睜鐪熷疄鐢靛帇骞跺啓鍏ョ紦瀛樸€? |
+| Code\02_Module\Src\mod_battery.c | 108 | // 5. 閲囨牱澶辫触锛氫繚鐣欐棫缂撳瓨骞惰繑鍥炲け璐ャ€? |
+| Code\02_Module\Src\mod_battery.c | 112 | // 6. 杩斿洖鏈鏇存柊缁撴灉銆? |
+| Code\02_Module\Src\mod_battery.c | 124 | // 1. 杩斿洖妯″潡缂撳瓨涓殑鏈€鏂扮數鍘嬪€笺€? |
+| Code\02_Module\Src\mod_k230.c | 15 | * @brief K230 鍗忚灞傛ā鍧楀疄鐜帮紙瑙ｈ€︾増锛? |
+| Code\02_Module\Src\mod_k230.c | 18 | * 1. 浣跨敤 ctx 鎵胯浇鍏ㄩ儴杩愯鎬侊紝閬垮厤鏃х増鈥滃叏灞€闈欐€佸崟瀹炰緥鈥濊€﹀悎銆? |
+| Code\02_Module\Src\mod_k230.c | 19 | * 2. 浣跨敤 bind 鎵胯浇鍏ㄩ儴纭欢/OS 璧勬簮娉ㄥ叆淇℃伅锛圲ART銆乵utex銆乻emaphore锛夈€? |
+| Code\02_Module\Src\mod_k230.c | 20 | * 3. 鏍￠獙绠楁硶鐢?bind.checksum_algo 鍐冲畾锛屽綋鍓嶅疄鐜?XOR銆? |
+| Code\02_Module\Src\mod_k230.c | 21 | * 4. 閫氳繃 UART->ctx 鏄犲皠鍜屽浐瀹氬洖璋冨垎鍙戣〃锛屾敮鎸佲€滄瘡涓?UART 瀵瑰簲涓€涓?K230 ctx鈥濄€? |
+| Code\02_Module\Src\mod_k230.c | 26 | /* 鍥哄畾鍗忚锛欰A AA 06 xx xx xx xx xx xx ck 55 55 */ |
+| Code\02_Module\Src\mod_k230.c | 30 | #define K230_PROTO_CHECKSUM_START_IDX     (2U) /* [2]..[8] 鍙備笌 XOR */ |
+| Code\02_Module\Src\mod_k230.c | 44 | /* 涓?drv_uart/mod_uart_guard 鍐呴儴绱㈠紩瑙勬ā淇濇寔涓€鑷达細USART1/2/3/UART4/5/USART6 */ |
+| Code\02_Module\Src\mod_k230.c | 47 | /* ========================== [ 2. 闈欐€佽祫婧?] ========================== */ |
+| Code\02_Module\Src\mod_k230.c | 49 | /* 榛樿涓婁笅鏂囷紝渚涘閮ㄥ湪涓嶈嚜寤哄疄渚嬫椂鐩存帴浣跨敤銆?*/ |
+| Code\02_Module\Src\mod_k230.c | 52 | /* UART 瀹炰緥鍒?K230 ctx 鐨勫弽鍚戞槧灏勶紝鐢ㄤ簬 RX 涓柇浜嬩欢鍒嗗彂銆?*/ |
+| Code\02_Module\Src\mod_k230.c | 58 | * @brief 灏?UART 澶栬瀹炰緥鏄犲皠鍒板浐瀹氱储寮曘€? |
+| Code\02_Module\Src\mod_k230.c | 59 | * @param instance UART 瀹炰緥鍦板潃銆? |
+| Code\02_Module\Src\mod_k230.c | 60 | * @return int8_t 鎴愬姛杩斿洖 [0,5]锛屽け璐ヨ繑鍥?-1銆? |
+| Code\02_Module\Src\mod_k230.c | 81 | * @brief 杩涘叆涓寸晫鍖猴紙鍏充腑鏂級銆? |
+| Code\02_Module\Src\mod_k230.c | 82 | * @return uint32_t 杩涘叆鍓?PRIMASK銆? |
+| Code\02_Module\Src\mod_k230.c | 92 | * @brief 閫€鍑轰复鐣屽尯锛堟仮澶嶄腑鏂姸鎬侊級銆? |
+| Code\02_Module\Src\mod_k230.c | 93 | * @param primask 杩涘叆涓寸晫鍖哄墠淇濆瓨鐨?PRIMASK銆? |
+| Code\02_Module\Src\mod_k230.c | 101 | * @brief 鍒ゆ柇鏍￠獙绠楁硶鏄惁宸插疄鐜般€? |
+| Code\02_Module\Src\mod_k230.c | 102 | * @param algo 鐩爣绠楁硶銆? |
+| Code\02_Module\Src\mod_k230.c | 103 | * @return true 鏀寔銆? |
+| Code\02_Module\Src\mod_k230.c | 104 | * @return false 涓嶆敮鎸併€? |
+| Code\02_Module\Src\mod_k230.c | 112 | * @brief 鍒ゆ柇涓婁笅鏂囨槸鍚﹁揪鍒板彲宸ヤ綔鐘舵€併€? |
+| Code\02_Module\Src\mod_k230.c | 113 | * @param ctx 涓婁笅鏂囨寚閽堛€? |
+| Code\02_Module\Src\mod_k230.c | 114 | * @return true 鍙伐浣溿€? |
+| Code\02_Module\Src\mod_k230.c | 115 | * @return false 涓嶅彲宸ヤ綔銆? |
+| Code\02_Module\Src\mod_k230.c | 126 | * @brief 閲嶇疆鍗忚瑙ｆ瀽鐘舵€佹満銆? |
+| Code\02_Module\Src\mod_k230.c | 127 | * @param ctx 涓婁笅鏂囨寚閽堛€? |
+| Code\02_Module\Src\mod_k230.c | 136 | * @brief 閲嶇疆杩愯鎬佺紦瀛橈紙涓嶄慨鏀?inited/bound锛屼笉閲婃斁 UART 璧勬簮锛夈€? |
+| Code\02_Module\Src\mod_k230.c | 137 | * @param ctx 涓婁笅鏂囨寚閽堛€? |
+| Code\02_Module\Src\mod_k230.c | 150 | * @brief 鍒ゆ柇 sem 鏄惁宸插瓨鍦ㄤ簬缁戝畾鍒楄〃涓€? |
+| Code\02_Module\Src\mod_k230.c | 151 | * @param bind 缁戝畾缁撴瀯銆? |
+| Code\02_Module\Src\mod_k230.c | 152 | * @param sem_id 鐩爣淇″彿閲忋€? |
+| ... | ... | 其余 288 条请查看CSV明细 |
+
+## 占位注释
+
+| 文件 | 行号 | 内容片段 |
+|---|---:|---|
+| Code\01_Task\Inc\task_dcc.h | 3 | * @brief   代码文件功能说明 |
+| Code\01_Task\Inc\task_dcc.h | 43 | * @brief  接口说明：StartDccTask |
+| Code\01_Task\Inc\task_dcc.h | 44 | * @param argument 参数说明 |
+| Code\01_Task\Inc\task_dcc.h | 45 | * @return 返回值说明 |
+| Code\01_Task\Inc\task_gpio.h | 3 | * @brief   代码文件功能说明 |
+| Code\01_Task\Inc\task_gpio.h | 40 | * @brief  接口说明：StartGpioTask |
+| Code\01_Task\Inc\task_gpio.h | 41 | * @param argument 参数说明 |
+| Code\01_Task\Inc\task_gpio.h | 42 | * @return 返回值说明 |
+| Code\01_Task\Inc\task_init.h | 3 | * @brief   代码文件功能说明 |
+| Code\01_Task\Inc\task_key.h | 3 | * @brief   代码文件功能说明 |
+| Code\01_Task\Inc\task_key.h | 23 | * @brief  接口说明：StartKeyTask |
+| Code\01_Task\Inc\task_key.h | 24 | * @param argument 参数说明 |
+| Code\01_Task\Inc\task_key.h | 25 | * @return 返回值说明 |
+| Code\01_Task\Inc\task_oled.h | 3 | * @brief   代码文件功能说明 |
+| Code\01_Task\Inc\task_stepper.h | 3 | * @brief   代码文件功能说明 |
+| Code\01_Task\Inc\task_stepper.h | 154 | * @brief  接口说明：task_stepper_is_ready |
+| Code\01_Task\Inc\task_stepper.h | 156 | * @return 返回值说明 |
+| Code\01_Task\Inc\task_stepper.h | 161 | * @brief  接口说明：StartStepperTask |
+| Code\01_Task\Inc\task_stepper.h | 162 | * @param argument 参数说明 |
+| Code\01_Task\Inc\task_stepper.h | 163 | * @return 返回值说明 |
+| Code\01_Task\Inc\task_test.h | 3 | * @brief   代码文件功能说明 |
+| Code\01_Task\Inc\task_test.h | 32 | * @brief  接口说明：StartTestTask |
+| Code\01_Task\Inc\task_test.h | 33 | * @param argument 参数说明 |
+| Code\01_Task\Inc\task_test.h | 34 | * @return 返回值说明 |
+| Code\01_Task\Src\task_dcc.c | 3 | * @brief   代码文件功能说明 |
+| Code\01_Task\Src\task_dcc.c | 329 | * @brief  函数说明：task_dcc_get_mode |
+| Code\01_Task\Src\task_dcc.c | 331 | * @return 返回值说明 |
+| Code\01_Task\Src\task_dcc.c | 340 | * @brief  函数说明：task_dcc_get_run_state |
+| Code\01_Task\Src\task_dcc.c | 342 | * @return 返回值说明 |
+| Code\01_Task\Src\task_dcc.c | 351 | * @brief  函数说明：task_dcc_get_ready |
+| Code\01_Task\Src\task_dcc.c | 353 | * @return 返回值说明 |
+| Code\01_Task\Src\task_dcc.c | 362 | * @brief  函数说明：StartDccTask |
+| Code\01_Task\Src\task_dcc.c | 363 | * @param argument 参数说明 |
+| Code\01_Task\Src\task_dcc.c | 364 | * @return 返回值说明 |
+| Code\01_Task\Src\task_gpio.c | 3 | * @brief   代码文件功能说明 |
+| Code\01_Task\Src\task_gpio.c | 46 | * @brief  函数说明：StartGpioTask |
+| Code\01_Task\Src\task_gpio.c | 47 | * @param argument 参数说明 |
+| Code\01_Task\Src\task_gpio.c | 48 | * @return 返回值说明 |
+| Code\01_Task\Src\task_init.c | 229 | * @brief  函数说明：task_wait_init_done |
+| Code\01_Task\Src\task_init.c | 231 | * @return 返回值说明 |
+| Code\01_Task\Src\task_key.c | 3 | * @brief   代码文件功能说明 |
+| Code\01_Task\Src\task_key.c | 25 | * @brief  函数说明：StartKeyTask |
+| Code\01_Task\Src\task_key.c | 26 | * @param argument 参数说明 |
+| Code\01_Task\Src\task_key.c | 27 | * @return 返回值说明 |
+| Code\01_Task\Src\task_test.c | 3 | * @brief   代码文件功能说明 |
+| Code\02_Module\Inc\mod_led.h | 45 | * @brief  接口说明：mod_led_bind_map |
+| Code\02_Module\Inc\mod_led.h | 46 | * @param map 参数说明 |
+| Code\02_Module\Inc\mod_led.h | 47 | * @param map_num 参数说明 |
+| Code\02_Module\Inc\mod_led.h | 48 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_led.h | 53 | * @brief  接口说明：mod_led_unbind_map |
+| Code\02_Module\Inc\mod_led.h | 55 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_led.h | 60 | * @brief  接口说明：mod_led_is_bound |
+| Code\02_Module\Inc\mod_led.h | 62 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_led.h | 68 | * @brief  接口说明：mod_led_Init |
+| Code\02_Module\Inc\mod_led.h | 70 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_led.h | 82 | * @brief  接口说明：mod_led_on |
+| Code\02_Module\Inc\mod_led.h | 83 | * @param led 参数说明 |
+| Code\02_Module\Inc\mod_led.h | 84 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_led.h | 89 | * @brief  接口说明：mod_led_off |
+| Code\02_Module\Inc\mod_led.h | 90 | * @param led 参数说明 |
+| Code\02_Module\Inc\mod_led.h | 91 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_led.h | 96 | * @brief  接口说明：mod_led_toggle |
+| Code\02_Module\Inc\mod_led.h | 97 | * @param led 参数说明 |
+| Code\02_Module\Inc\mod_led.h | 98 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_motor.h | 85 | * @brief  接口说明：mod_motor_init |
+| Code\02_Module\Inc\mod_motor.h | 87 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_motor.h | 92 | * @brief  接口说明：mod_motor_set_mode |
+| Code\02_Module\Inc\mod_motor.h | 93 | * @param id 参数说明 |
+| Code\02_Module\Inc\mod_motor.h | 94 | * @param mode 参数说明 |
+| Code\02_Module\Inc\mod_motor.h | 95 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_motor.h | 100 | * @brief  接口说明：mod_motor_set_duty |
+| Code\02_Module\Inc\mod_motor.h | 101 | * @param id 参数说明 |
+| Code\02_Module\Inc\mod_motor.h | 102 | * @param duty 参数说明 |
+| Code\02_Module\Inc\mod_motor.h | 103 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_motor.h | 108 | * @brief  接口说明：mod_motor_tick |
+| Code\02_Module\Inc\mod_motor.h | 110 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_motor.h | 115 | * @brief  接口说明：mod_motor_get_speed |
+| Code\02_Module\Inc\mod_motor.h | 116 | * @param id 参数说明 |
+| Code\02_Module\Inc\mod_motor.h | 117 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_motor.h | 122 | * @brief  接口说明：mod_motor_get_position |
+| Code\02_Module\Inc\mod_motor.h | 123 | * @param id 参数说明 |
+| Code\02_Module\Inc\mod_motor.h | 124 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_relay.h | 44 | * @brief  接口说明：mod_relay_bind_map |
+| Code\02_Module\Inc\mod_relay.h | 45 | * @param map 参数说明 |
+| Code\02_Module\Inc\mod_relay.h | 46 | * @param map_num 参数说明 |
+| Code\02_Module\Inc\mod_relay.h | 47 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_relay.h | 52 | * @brief  接口说明：mod_relay_unbind_map |
+| Code\02_Module\Inc\mod_relay.h | 54 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_relay.h | 59 | * @brief  接口说明：mod_relay_is_bound |
+| Code\02_Module\Inc\mod_relay.h | 61 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_relay.h | 67 | * @brief  接口说明：mod_relay_init |
+| Code\02_Module\Inc\mod_relay.h | 69 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_relay.h | 74 | * @brief  接口说明：mod_relay_on |
+| Code\02_Module\Inc\mod_relay.h | 75 | * @param relay 参数说明 |
+| Code\02_Module\Inc\mod_relay.h | 76 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_relay.h | 81 | * @brief  接口说明：mod_relay_off |
+| Code\02_Module\Inc\mod_relay.h | 82 | * @param relay 参数说明 |
+| Code\02_Module\Inc\mod_relay.h | 83 | * @return 返回值说明 |
+| Code\02_Module\Inc\mod_relay.h | 88 | * @brief  接口说明：mod_relay_toggle |
+| Code\02_Module\Inc\mod_relay.h | 89 | * @param relay 参数说明 |
+| Code\02_Module\Inc\mod_relay.h | 90 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_battery.c | 3 | * @brief   代码文件功能说明 |
+| Code\02_Module\Src\mod_battery.c | 20 | * @brief  函数说明：mod_battery_bind_adc |
+| Code\02_Module\Src\mod_battery.c | 21 | * @param hadc 参数说明 |
+| Code\02_Module\Src\mod_battery.c | 22 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_battery.c | 42 | * @brief  函数说明：mod_battery_unbind_adc |
+| Code\02_Module\Src\mod_battery.c | 44 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_battery.c | 57 | * @brief  函数说明：mod_battery_is_bound |
+| Code\02_Module\Src\mod_battery.c | 59 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_battery.c | 69 | * @brief  函数说明：mod_battery_init |
+| Code\02_Module\Src\mod_battery.c | 71 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_battery.c | 80 | * @brief  函数说明：mod_battery_update |
+| Code\02_Module\Src\mod_battery.c | 82 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_battery.c | 117 | * @brief  函数说明：mod_battery_get_voltage |
+| Code\02_Module\Src\mod_battery.c | 119 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 3 | * @brief   代码文件功能说明 |
+| Code\02_Module\Src\mod_k230.c | 652 | * @brief  函数说明：mod_k230_init |
+| Code\02_Module\Src\mod_k230.c | 653 | * @param bind 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 654 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 681 | * @brief  函数说明：mod_k230_deinit |
+| Code\02_Module\Src\mod_k230.c | 683 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 700 | * @brief  函数说明：mod_k230_ctx_init |
+| Code\02_Module\Src\mod_k230.c | 701 | * @param ctx 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 702 | * @param bind 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 703 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 731 | * @brief  函数说明：mod_k230_ctx_deinit |
+| Code\02_Module\Src\mod_k230.c | 732 | * @param ctx 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 733 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 748 | * @brief  函数说明：mod_k230_bind |
+| Code\02_Module\Src\mod_k230.c | 749 | * @param ctx 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 750 | * @param bind 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 751 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 819 | * @brief  函数说明：mod_k230_unbind |
+| Code\02_Module\Src\mod_k230.c | 820 | * @param ctx 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 821 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 853 | * @brief  函数说明：mod_k230_is_bound |
+| Code\02_Module\Src\mod_k230.c | 854 | * @param ctx 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 855 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 864 | * @brief  函数说明：mod_k230_set_checksum_algo |
+| Code\02_Module\Src\mod_k230.c | 865 | * @param ctx 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 866 | * @param algo 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 867 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 886 | * @brief  函数说明：mod_k230_add_semaphore |
+| Code\02_Module\Src\mod_k230.c | 887 | * @param ctx 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 888 | * @param sem_id 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 889 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 920 | * @brief  函数说明：mod_k230_remove_semaphore |
+| Code\02_Module\Src\mod_k230.c | 921 | * @param ctx 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 922 | * @param sem_id 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 923 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 958 | * @brief  函数说明：mod_k230_clear_semaphores |
+| Code\02_Module\Src\mod_k230.c | 959 | * @param ctx 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 960 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 979 | * @brief  函数说明：mod_k230_set_tx_mutex |
+| Code\02_Module\Src\mod_k230.c | 980 | * @param ctx 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 981 | * @param mutex_id 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 982 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 1000 | * @brief  函数说明：mod_k230_send_bytes |
+| Code\02_Module\Src\mod_k230.c | 1001 | * @param ctx 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 1002 | * @param data 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 1003 | * @param len 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 1004 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 1032 | * @brief  函数说明：mod_k230_is_tx_free |
+| Code\02_Module\Src\mod_k230.c | 1033 | * @param ctx 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 1034 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 1048 | * @brief  函数说明：mod_k230_available |
+| Code\02_Module\Src\mod_k230.c | 1049 | * @param ctx 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 1050 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 1070 | * @brief  函数说明：mod_k230_read_bytes |
+| Code\02_Module\Src\mod_k230.c | 1071 | * @param ctx 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 1072 | * @param out 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 1073 | * @param max_len 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 1074 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 1106 | * @brief  函数说明：mod_k230_clear_rx_buffer |
+| Code\02_Module\Src\mod_k230.c | 1107 | * @param ctx 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 1108 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_k230.c | 1129 | * @brief  函数说明：mod_k230_get_latest_frame |
+| Code\02_Module\Src\mod_k230.c | 1130 | * @param ctx 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 1131 | * @param out_frame 参数说明 |
+| Code\02_Module\Src\mod_k230.c | 1132 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_key.c | 3 | * @brief   代码文件功能说明 |
+| Code\02_Module\Src\mod_key.c | 126 | * @brief  函数说明：mod_key_init |
+| Code\02_Module\Src\mod_key.c | 128 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_key.c | 158 | * @brief  函数说明：mod_key_scan |
+| Code\02_Module\Src\mod_key.c | 160 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_led.c | 3 | * @brief   代码文件功能说明 |
+| Code\02_Module\Src\mod_led.c | 52 | * @brief  函数说明：mod_led_bind_map |
+| Code\02_Module\Src\mod_led.c | 53 | * @param map 参数说明 |
+| Code\02_Module\Src\mod_led.c | 54 | * @param map_num 参数说明 |
+| Code\02_Module\Src\mod_led.c | 55 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_led.c | 83 | * @brief  函数说明：mod_led_unbind_map |
+| Code\02_Module\Src\mod_led.c | 85 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_led.c | 94 | * @brief  函数说明：mod_led_is_bound |
+| Code\02_Module\Src\mod_led.c | 96 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_led.c | 105 | * @brief  函数说明：mod_led_init |
+| Code\02_Module\Src\mod_led.c | 107 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_led.c | 126 | * @brief  函数说明：mod_led_Init |
+| Code\02_Module\Src\mod_led.c | 128 | * @return 返回值说明 |
+| Code\02_Module\Src\mod_led.c | 136 | * @brief  函数说明：mod_led_on |
+| Code\02_Module\Src\mod_led.c | 137 | * @param led 参数说明 |
+| ... | ... | 其余 162 条请查看CSV明细 |
+
+## 局部变量缺少//注释
+
+| 文件 | 行号 | 内容片段 |
+|---|---:|---|
+| Code\02_Module\Src\mod_k230.c | 158 | for (uint8_t i = 0U; i < bind->sem_count; i++) |
+| Code\02_Module\Src\mod_k230.c | 187 | for (uint8_t i = 0U; (i < bind->sem_count) && (i < MOD_K230_MAX_BIND_SEM); i++) |
+| Code\02_Module\Src\mod_k230.c | 287 | for (uint16_t i = 0U; i < len; i++) |
+| Code\02_Module\Src\mod_k230.c | 367 | for (uint8_t i = 1U; i < MOD_K230_PROTO_FRAME_SIZE; i++) |
+| Code\02_Module\Src\mod_k230.c | 490 | for (uint8_t i = 0U; i < ctx->bind.sem_count; i++) |
+| Code\02_Module\Src\mod_k230.c | 938 | for (uint8_t i = 0U; i < ctx->bind.sem_count; i++) |
+| Code\02_Module\Src\mod_k230.c | 942 | for (uint8_t j = i; (j + 1U) < ctx->bind.sem_count; j++) |
+| Code\02_Module\Src\mod_k230.c | 1158 | for (uint16_t i = 0U; i < read_len; i++) |
+| Code\02_Module\Src\mod_led.c | 67 | for (uint8_t i = 0U; i < LED_MAX; i++) |
+| Code\02_Module\Src\mod_led.c | 119 | for (uint8_t i = 0U; i < LED_MAX; i++) |
+| Code\02_Module\Src\mod_motor.c | 94 | for (uint8_t i = 0U; i < MOD_MOTOR_MAX; i++) |
+| Code\02_Module\Src\mod_motor.c | 271 | for (uint8_t i = 0U; i < MOD_MOTOR_MAX; i++) |
+| Code\02_Module\Src\mod_motor.c | 433 | for (uint8_t i = 0U; i < MOD_MOTOR_MAX; i++) |
+| Code\02_Module\Src\mod_relay.c | 67 | for (uint8_t i = 0U; i < RELAY_MAX; i++) |
+| Code\02_Module\Src\mod_relay.c | 119 | for (uint8_t i = 0U; i < RELAY_MAX; i++) |
+| Code\02_Module\Src\mod_stepper.c | 68 | for (uint16_t i = 0U; i < MOD_STEPPER_MAX_UART_INSTANCES; i++) |
+| Code\02_Module\Src\mod_stepper.c | 435 | for (uint16_t i = 0U; i < MOD_STEPPER_MAX_UART_INSTANCES; i++) |
+| Code\02_Module\Src\mod_vofa.c | 85 | for (uint8_t i = 0U; (i < bind->sem_count) && (i < MOD_VOFA_MAX_BIND_SEM); i++) |
+| Code\02_Module\Src\mod_vofa.c | 104 | for (uint8_t i = 0U; i < ctx->bind.sem_count; i++) |
+| Code\02_Module\Src\mod_vofa.c | 255 | for (uint8_t i = 0U; i < (uint8_t)CMD_TABLE_SIZE; i++) |
+| Code\02_Module\Src\mod_vofa.c | 460 | for (uint8_t i = 0U; i < ctx->bind.sem_count; i++) |
+| Code\02_Module\Src\mod_vofa.c | 502 | for (uint8_t i = 0U; i < ctx->bind.sem_count; i++) |
+| Code\02_Module\Src\mod_vofa.c | 506 | for (uint8_t j = i; (j + 1U) < ctx->bind.sem_count; j++) |
+| Code\02_Module\Src\mod_vofa.c | 679 | for (uint16_t i = 0U; (i < n) && result; i++) |
+| Code\02_Module\Src\mod_vofa.c | 749 | for (uint16_t i = 0U; (i < n) && result; i++) |
+| Code\02_Module\Src\mod_vofa.c | 819 | for (uint16_t i = 0U; (i < n) && result; i++) |
+| Code\03_Common\Src\common_str.c | 188 | for (uint8_t k = 0U; k < (COMMON_STR_FLOAT_PRECISION - 1U - i); k++) |
+| Code\04_Driver\Src\drv_key.c | 457 | for (uint8_t i = 0U; i < s_drv_key_cfg.key_num; i++) |
+| Code\04_Driver\Src\drv_key.c | 498 | for (uint8_t i = 0U; i < s_drv_key_cfg.key_num; i++) |

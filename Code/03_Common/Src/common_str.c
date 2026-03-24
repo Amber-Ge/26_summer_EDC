@@ -1,3 +1,10 @@
+﻿/**
+ * @file    common_str.c
+ * @brief   字符串公共工具实现。
+ * @details
+ * 1. 文件作用：实现字符串解析、格式化与辅助工具函数。
+ * 2. 上下层绑定：上层由模块与任务层复用；下层不依赖硬件接口。
+ */
 #include "common_str.h"
 
 /**
@@ -46,7 +53,7 @@ static bool _u32_to_str_tool(uint32_t val, char *p_out, uint16_t size, uint16_t 
             //4. 检查输出缓冲区容量，再将逆序字符翻转写回
             if ((uint16_t)(i + 1U) <= size)
             {
-                for (j = 0U; j < i; j++)
+                for (j = 0U; j < i; j++) // 循环计数器
                 {
                     p_out[j] = tmp[i - 1U - j];
                 }
@@ -61,6 +68,13 @@ static bool _u32_to_str_tool(uint32_t val, char *p_out, uint16_t size, uint16_t 
     return result;
 }
 
+/**
+ * @brief 无符号整数转十进制字符串。
+ * @param val 待转换无符号整数。
+ * @param p_out 输出缓冲区。
+ * @param size 输出缓冲区容量。
+ * @return 转换成功返回 `true`，失败返回 `false`。
+ */
 bool common_uint_to_str(uint32_t val, char *p_out, uint16_t size)
 {
     bool result = false; // 接口执行结果
@@ -77,6 +91,13 @@ bool common_uint_to_str(uint32_t val, char *p_out, uint16_t size)
     return result;
 }
 
+/**
+ * @brief 有符号整数转十进制字符串。
+ * @param val 待转换有符号整数。
+ * @param p_out 输出缓冲区。
+ * @param size 输出缓冲区容量。
+ * @return 转换成功返回 `true`，失败返回 `false`。
+ */
 bool common_int_to_str(int32_t val, char *p_out, uint16_t size)
 {
     bool result = false; // 接口执行结果
@@ -106,6 +127,13 @@ bool common_int_to_str(int32_t val, char *p_out, uint16_t size)
     return result;
 }
 
+/**
+ * @brief 浮点数按固定精度转字符串。
+ * @param val 待转换浮点数。
+ * @param p_out 输出缓冲区。
+ * @param size 输出缓冲区容量。
+ * @return 转换成功返回 `true`，失败返回 `false`。
+ */
 bool common_float_to_str(float val, char *p_out, uint16_t size)
 {
     bool result = false; // 接口执行结果
@@ -130,7 +158,7 @@ bool common_float_to_str(float val, char *p_out, uint16_t size)
         }
 
         //3. 计算小数缩放因子
-        for (i = 0U; i < COMMON_STR_FLOAT_PRECISION; i++)
+        for (i = 0U; i < COMMON_STR_FLOAT_PRECISION; i++) // 循环计数器
         {
             scale *= 10U;
         }
@@ -154,10 +182,10 @@ bool common_float_to_str(float val, char *p_out, uint16_t size)
             {
                 //7. 写入小数点和固定精度小数位
                 p_out[idx++] = '.';
-                for (i = 0U; i < COMMON_STR_FLOAT_PRECISION; i++)
+                for (i = 0U; i < COMMON_STR_FLOAT_PRECISION; i++) // 循环计数器
                 {
                     uint32_t sub_scale = 1U; // 当前小数位对应除数
-                    for (uint8_t k = 0U; k < (COMMON_STR_FLOAT_PRECISION - 1U - i); k++)
+                    for (uint8_t k = 0U; k < (COMMON_STR_FLOAT_PRECISION - 1U - i); k++) // 循环计数器
                     {
                         sub_scale *= 10U;
                     }
@@ -172,3 +200,4 @@ bool common_float_to_str(float val, char *p_out, uint16_t size)
     //8. 返回转换结果
     return result;
 }
+

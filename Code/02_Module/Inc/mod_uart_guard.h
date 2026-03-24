@@ -1,10 +1,15 @@
-/**
- ******************************************************************************
+﻿/**
  * @file    mod_uart_guard.h
- * @brief   UART 资源占用仲裁接口定义
+ * @author  姜凯中
+ * @version v1.0.0
+ * @date    2026-03-23
+ * @brief   UART 资源占用仲裁接口定义。
  * @details
- * 该模块用于协调多个业务模块对同一 UART 的独占访问，避免冲突。
- ******************************************************************************
+ * 1. 文件作用：维护 UART 句柄的占用登记与冲突检测，避免跨模块重复绑定同一通道。
+ * 2. 解耦边界：仅负责资源仲裁，不处理实际 UART 收发和协议语义。
+ * 3. 上层绑定：VOFA/K230/Stepper 等模块在 bind 阶段调用申请/释放接口。
+ * 4. 下层依赖：以 `drv_uart` 句柄作为资源键值，不依赖具体任务上下文。
+ * 5. 生命周期：资源表在系统运行期常驻，模块解绑后应及时释放占用记录。
  */
 #ifndef FINAL_GRADUATE_WORK_MOD_UART_GUARD_H
 #define FINAL_GRADUATE_WORK_MOD_UART_GUARD_H // 头文件防重复包含宏
@@ -49,3 +54,5 @@ bool mod_uart_guard_release(UART_HandleTypeDef *huart, mod_uart_owner_e owner);
 mod_uart_owner_e mod_uart_guard_get_owner(UART_HandleTypeDef *huart);
 
 #endif /* FINAL_GRADUATE_WORK_MOD_UART_GUARD_H */
+
+

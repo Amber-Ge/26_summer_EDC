@@ -1,3 +1,16 @@
+﻿/**
+ * @file    mod_vofa.h
+ * @author  姜凯中
+ * @version v1.0.0
+ * @date    2026-03-23
+ * @brief   VOFA 通信模块接口。
+ * @details
+ * 1. 文件作用：封装 VOFA 协议通道的发送、接收、命令解析与上下文管理。
+ * 2. 解耦边界：本模块处理通信协议和缓冲，不直接执行上层业务命令动作。
+ * 3. 上层绑定：`InitTask` 注入串口与互斥资源，业务任务按需调用发送/取命令接口。
+ * 4. 下层依赖：`drv_uart` 负责收发，`mod_uart_guard` 负责 UART 独占仲裁，RTOS 对象用于同步。
+ * 5. 生命周期：上下文需先初始化/绑定，再在主循环中调用 `process` 驱动协议状态机。
+ */
 #ifndef FINAL_GRADUATE_WORK_MOD_VOFA_H
 #define FINAL_GRADUATE_WORK_MOD_VOFA_H
 
@@ -71,3 +84,5 @@ bool mod_vofa_send_uint(const char *tag, const uint32_t *arr, uint16_t n);
 bool mod_vofa_send_string(const char *str);
 
 #endif
+
+

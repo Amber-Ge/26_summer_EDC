@@ -1,11 +1,15 @@
-/**
- ******************************************************************************
+﻿/**
  * @file    mod_battery.h
- * @brief   电池电压模块接口
+ * @author  姜凯中
+ * @version v1.0.0
+ * @date    2026-03-23
+ * @brief   电池电压模块接口。
  * @details
- * 1. 模块层只负责电压业务换算：ADC原始值 -> 实际电池电压。
- * 2. 模块层不再提供默认硬件回落，必须先显式绑定ADC句柄。
- ******************************************************************************
+ * 1. 文件作用：封装“ADC 原始采样值 -> 电压值”的业务换算，提供统一电压读取接口。
+ * 2. 解耦边界：本模块只做采样聚合与比例换算，不管理 ADC 初始化、校准和通道复用策略。
+ * 3. 上层绑定：由 `OledTask` 等展示/控制任务按周期触发 `update`，再读取最近电压值。
+ * 4. 下层依赖：通过 `mod_battery_bind_adc()` 注入 ADC 句柄，底层采样由 `drv_adc` 执行。
+ * 5. 生命周期：遵循“先 bind 后 update/get”，未绑定时接口返回失败或保持默认值。
  */
 #ifndef FINAL_GRADUATE_WORK_MOD_BATTERY_H
 #define FINAL_GRADUATE_WORK_MOD_BATTERY_H
@@ -55,3 +59,4 @@ bool mod_battery_update(void);
 float mod_battery_get_voltage(void);
 
 #endif /* FINAL_GRADUATE_WORK_MOD_BATTERY_H */
+

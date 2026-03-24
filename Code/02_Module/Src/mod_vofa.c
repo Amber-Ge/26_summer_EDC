@@ -1,11 +1,16 @@
-#include "mod_vofa.h"
-
-/**
+﻿/**
  * @file mod_vofa.c
  * @brief VOFA 通信模块实现
  * @details
- * 负责 VOFA 串口绑定、DMA 接收命令解析与多类型数据打包发送。
+ * 1. 文件作用：实现 VOFA 通道上下文管理、命令解析和多类型数据打包发送。
+ * 2. 解耦边界：协议处理在模块内部闭环，不直接执行上层业务命令动作。
+ * 3. 上层绑定：`InitTask` 注入串口与互斥资源，业务任务按需调用发送/读命令接口。
+ * 4. 下层依赖：`drv_uart` 提供 DMA/阻塞收发，`mod_uart_guard` 负责 UART 独占仲裁。
+ * 5. 生命周期：先 `ctx_init/bind`，运行期 `process` 驱动协议状态，最后按需解绑。
  */
+
+#include "mod_vofa.h"
+
 
 typedef struct
 {
@@ -24,18 +29,35 @@ static const vofa_cmd_entry_t s_cmd_table[] =
 
 #define CMD_TABLE_SIZE (sizeof(s_cmd_table) / sizeof(s_cmd_table[0]))
 
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param 无。
+ * @return 返回计算结果或状态码，具体语义见实现。
+ */
 static uint32_t _critical_enter(void)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     uint32_t primask = __get_PRIMASK(); // 进入前中断屏蔽状态
     __disable_irq();
     return primask;
 }
 
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param primask 函数输入参数，语义由调用场景决定。
+ * @return 无。
+ */
 static void _critical_exit(uint32_t primask)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     __set_PRIMASK(primask);
 }
 
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 static bool _ctx_ready(const mod_vofa_ctx_t *ctx)
 {
     //1. 判定上下文是否已初始化、已绑定且 UART 有效
@@ -45,6 +67,12 @@ static bool _ctx_ready(const mod_vofa_ctx_t *ctx)
             (ctx->bind.huart != NULL));
 }
 
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param bind 函数输入参数，语义由调用场景决定。
+ * @return 无。
+ */
 static void _copy_bind_cfg(mod_vofa_ctx_t *ctx, const mod_vofa_bind_t *bind)
 {
     //1. 复制 UART、互斥锁与信号量绑定配置
@@ -54,7 +82,7 @@ static void _copy_bind_cfg(mod_vofa_ctx_t *ctx, const mod_vofa_bind_t *bind)
     memset(ctx->bind.sem_list, 0, sizeof(ctx->bind.sem_list));
 
     //2. 仅复制有效信号量句柄，并限制最大数量
-    for (uint8_t i = 0U; (i < bind->sem_count) && (i < MOD_VOFA_MAX_BIND_SEM); i++)
+    for (uint8_t i = 0U; (i < bind->sem_count) && (i < MOD_VOFA_MAX_BIND_SEM); i++) // 循环计数器
     {
         if (bind->sem_list[i] != NULL)
         {
@@ -64,10 +92,15 @@ static void _copy_bind_cfg(mod_vofa_ctx_t *ctx, const mod_vofa_bind_t *bind)
     }
 }
 
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 无。
+ */
 static void _notify_all_semaphores(const mod_vofa_ctx_t *ctx)
 {
     //1. 逐个释放绑定信号量，通知上层有新命令
-    for (uint8_t i = 0U; i < ctx->bind.sem_count; i++)
+    for (uint8_t i = 0U; i < ctx->bind.sem_count; i++) // 循环计数器
     {
         if (ctx->bind.sem_list[i] != NULL)
         {
@@ -76,6 +109,11 @@ static void _notify_all_semaphores(const mod_vofa_ctx_t *ctx)
     }
 }
 
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 无。
+ */
 static void _restart_rx_dma(mod_vofa_ctx_t *ctx)
 {
     //1. 上下文就绪时重启 DMA 接收，失败执行停启重试
@@ -91,6 +129,14 @@ static void _restart_rx_dma(mod_vofa_ctx_t *ctx)
     }
 }
 
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param max 函数输入参数，语义由调用场景决定。
+ * @param p_idx 输入/输出缓冲区指针。
+ * @param c 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 static bool _append_char(mod_vofa_ctx_t *ctx, uint16_t max, uint16_t *p_idx, char c)
 {
     //1. 参数与缓冲区边界校验
@@ -105,6 +151,14 @@ static bool _append_char(mod_vofa_ctx_t *ctx, uint16_t max, uint16_t *p_idx, cha
     return true;
 }
 
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param max 函数输入参数，语义由调用场景决定。
+ * @param p_idx 输入/输出缓冲区指针。
+ * @param s 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 static bool _append_str(mod_vofa_ctx_t *ctx, uint16_t max, uint16_t *p_idx, const char *s)
 {
     bool result = true; // 追加结果
@@ -125,6 +179,11 @@ static bool _append_str(mod_vofa_ctx_t *ctx, uint16_t max, uint16_t *p_idx, cons
     return result;
 }
 
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 static bool _tx_lock(mod_vofa_ctx_t *ctx)
 {
     //1. 未配置互斥锁时默认加锁成功
@@ -136,6 +195,11 @@ static bool _tx_lock(mod_vofa_ctx_t *ctx)
     return (osMutexAcquire(ctx->bind.tx_mutex, MOD_VOFA_TX_MUTEX_TIMEOUT_MS) == osOK);
 }
 
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 无。
+ */
 static void _tx_unlock(mod_vofa_ctx_t *ctx)
 {
     //1. 已配置互斥锁时释放发送锁
@@ -145,6 +209,11 @@ static void _tx_unlock(mod_vofa_ctx_t *ctx)
     }
 }
 
+/**
+ * @brief 执行当前函数对应的业务处理逻辑。
+ * @param len 数据长度或数量参数。
+ * @return 无。
+ */
 static void _vofa_rx_callback_handler(uint16_t len)
 {
     mod_vofa_ctx_t *ctx = s_active_ctx; // 当前激活上下文
@@ -173,7 +242,7 @@ static void _vofa_rx_callback_handler(uint16_t len)
             ctx->rx_buf[MOD_VOFA_RX_BUF_SIZE - 1U] = '\0';
         }
 
-        for (uint8_t i = 0U; i < (uint8_t)CMD_TABLE_SIZE; i++)
+        for (uint8_t i = 0U; i < (uint8_t)CMD_TABLE_SIZE; i++) // 循环计数器
         {
             if (strstr((const char *)ctx->rx_buf, s_cmd_table[i].cmd_str) != NULL)
             {
@@ -198,6 +267,12 @@ mod_vofa_ctx_t *mod_vofa_get_default_ctx(void)
     return &s_default_ctx;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param bind 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_vofa_ctx_init(mod_vofa_ctx_t *ctx, const mod_vofa_bind_t *bind)
 {
     //1. 参数校验
@@ -220,6 +295,12 @@ bool mod_vofa_ctx_init(mod_vofa_ctx_t *ctx, const mod_vofa_bind_t *bind)
     return true;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param bind 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_vofa_bind(mod_vofa_ctx_t *ctx, const mod_vofa_bind_t *bind)
 {
     bool result = false; // 绑定结果
@@ -276,6 +357,11 @@ bool mod_vofa_bind(mod_vofa_ctx_t *ctx, const mod_vofa_bind_t *bind)
     return result;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 无。
+ */
 void mod_vofa_unbind(mod_vofa_ctx_t *ctx)
 {
     //1. 参数与状态校验
@@ -301,12 +387,23 @@ void mod_vofa_unbind(mod_vofa_ctx_t *ctx)
     ctx->last_cmd = VOFA_CMD_NONE;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_vofa_is_bound(const mod_vofa_ctx_t *ctx)
 {
     //1. 返回上下文是否处于可工作绑定状态
     return _ctx_ready(ctx);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param sem_id 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_vofa_add_semaphore(mod_vofa_ctx_t *ctx, osSemaphoreId_t sem_id)
 {
     bool result = false; // 添加结果
@@ -321,7 +418,7 @@ bool mod_vofa_add_semaphore(mod_vofa_ctx_t *ctx, osSemaphoreId_t sem_id)
     //2. 临界区内：已存在则成功，不存在则尝试追加
     primask = _critical_enter();
 
-    for (uint8_t i = 0U; i < ctx->bind.sem_count; i++)
+    for (uint8_t i = 0U; i < ctx->bind.sem_count; i++) // 循环计数器
     {
         if (ctx->bind.sem_list[i] == sem_id)
         {
@@ -341,6 +438,12 @@ bool mod_vofa_add_semaphore(mod_vofa_ctx_t *ctx, osSemaphoreId_t sem_id)
     return result;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param sem_id 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_vofa_remove_semaphore(mod_vofa_ctx_t *ctx, osSemaphoreId_t sem_id)
 {
     bool result = false; // 删除结果
@@ -355,11 +458,11 @@ bool mod_vofa_remove_semaphore(mod_vofa_ctx_t *ctx, osSemaphoreId_t sem_id)
     //2. 临界区内查找并删除，后续元素前移
     primask = _critical_enter();
 
-    for (uint8_t i = 0U; i < ctx->bind.sem_count; i++)
+    for (uint8_t i = 0U; i < ctx->bind.sem_count; i++) // 循环计数器
     {
         if (ctx->bind.sem_list[i] == sem_id)
         {
-            for (uint8_t j = i; (j + 1U) < ctx->bind.sem_count; j++)
+            for (uint8_t j = i; (j + 1U) < ctx->bind.sem_count; j++) // 循环计数器
             {
                 ctx->bind.sem_list[j] = ctx->bind.sem_list[j + 1U];
             }
@@ -374,6 +477,11 @@ bool mod_vofa_remove_semaphore(mod_vofa_ctx_t *ctx, osSemaphoreId_t sem_id)
     return result;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 无。
+ */
 void mod_vofa_clear_semaphores(mod_vofa_ctx_t *ctx)
 {
     uint32_t primask; // 临界区状态保存值
@@ -391,6 +499,12 @@ void mod_vofa_clear_semaphores(mod_vofa_ctx_t *ctx)
     _critical_exit(primask);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param mutex_id 函数输入参数，语义由调用场景决定。
+ * @return 无。
+ */
 void mod_vofa_set_tx_mutex(mod_vofa_ctx_t *ctx, osMutexId_t mutex_id)
 {
     uint32_t primask; // 临界区状态保存值
@@ -407,6 +521,11 @@ void mod_vofa_set_tx_mutex(mod_vofa_ctx_t *ctx, osMutexId_t mutex_id)
     _critical_exit(primask);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @return 返回函数执行结果。
+ */
 vofa_cmd_id_t mod_vofa_get_command_ctx(mod_vofa_ctx_t *ctx)
 {
     vofa_cmd_id_t cmd = VOFA_CMD_NONE; // 返回命令
@@ -427,6 +546,12 @@ vofa_cmd_id_t mod_vofa_get_command_ctx(mod_vofa_ctx_t *ctx)
     return cmd;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param str 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_vofa_send_string_ctx(mod_vofa_ctx_t *ctx, const char *str)
 {
     bool result = false; // 发送结果
@@ -463,6 +588,14 @@ bool mod_vofa_send_string_ctx(mod_vofa_ctx_t *ctx, const char *str)
     return result;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param tag 函数输入参数，语义由调用场景决定。
+ * @param arr 函数输入参数，语义由调用场景决定。
+ * @param n 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_vofa_send_float_ctx(mod_vofa_ctx_t *ctx, const char *tag, const float *arr, uint16_t n)
 {
     bool result = false; // 发送结果
@@ -495,7 +628,7 @@ bool mod_vofa_send_float_ctx(mod_vofa_ctx_t *ctx, const char *tag, const float *
             }
         }
 
-        for (uint16_t i = 0U; (i < n) && result; i++)
+        for (uint16_t i = 0U; (i < n) && result; i++) // 循环计数器
         {
             char num[20]; // 浮点数转字符串缓存
             result = common_float_to_str(arr[i], num, (uint16_t)sizeof(num));
@@ -523,6 +656,14 @@ bool mod_vofa_send_float_ctx(mod_vofa_ctx_t *ctx, const char *tag, const float *
     return result;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param tag 函数输入参数，语义由调用场景决定。
+ * @param arr 函数输入参数，语义由调用场景决定。
+ * @param n 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_vofa_send_int_ctx(mod_vofa_ctx_t *ctx, const char *tag, const int32_t *arr, uint16_t n)
 {
     bool result = false; // 发送结果
@@ -555,7 +696,7 @@ bool mod_vofa_send_int_ctx(mod_vofa_ctx_t *ctx, const char *tag, const int32_t *
             }
         }
 
-        for (uint16_t i = 0U; (i < n) && result; i++)
+        for (uint16_t i = 0U; (i < n) && result; i++) // 循环计数器
         {
             char num[16]; // 整型转字符串缓存
             result = common_int_to_str(arr[i], num, (uint16_t)sizeof(num));
@@ -583,6 +724,14 @@ bool mod_vofa_send_int_ctx(mod_vofa_ctx_t *ctx, const char *tag, const int32_t *
     return result;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param ctx 模块上下文对象，用于保存运行时状态。
+ * @param tag 函数输入参数，语义由调用场景决定。
+ * @param arr 函数输入参数，语义由调用场景决定。
+ * @param n 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_vofa_send_uint_ctx(mod_vofa_ctx_t *ctx, const char *tag, const uint32_t *arr, uint16_t n)
 {
     bool result = false; // 发送结果
@@ -615,7 +764,7 @@ bool mod_vofa_send_uint_ctx(mod_vofa_ctx_t *ctx, const char *tag, const uint32_t
             }
         }
 
-        for (uint16_t i = 0U; (i < n) && result; i++)
+        for (uint16_t i = 0U; (i < n) && result; i++) // 循环计数器
         {
             char num[16]; // 无符号整型转字符串缓存
             result = common_uint_to_str(arr[i], num, (uint16_t)sizeof(num));
@@ -643,6 +792,12 @@ bool mod_vofa_send_uint_ctx(mod_vofa_ctx_t *ctx, const char *tag, const uint32_t
     return result;
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param huart 函数输入参数，语义由调用场景决定。
+ * @param sem_id 函数输入参数，语义由调用场景决定。
+ * @return 无。
+ */
 void mod_vofa_init(UART_HandleTypeDef *huart, osSemaphoreId_t sem_id)
 {
     mod_vofa_bind_t bind; // 绑定参数
@@ -670,30 +825,61 @@ void mod_vofa_init(UART_HandleTypeDef *huart, osSemaphoreId_t sem_id)
     }
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param 无。
+ * @return 返回函数执行结果。
+ */
 vofa_cmd_id_t mod_vofa_get_command(void)
 {
     //1. 从默认上下文读取并清空命令
     return mod_vofa_get_command_ctx(mod_vofa_get_default_ctx());
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param tag 函数输入参数，语义由调用场景决定。
+ * @param arr 函数输入参数，语义由调用场景决定。
+ * @param n 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_vofa_send_float(const char *tag, const float *arr, uint16_t n)
 {
     //1. 默认上下文浮点数组发送封装
     return mod_vofa_send_float_ctx(mod_vofa_get_default_ctx(), tag, arr, n);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param tag 函数输入参数，语义由调用场景决定。
+ * @param arr 函数输入参数，语义由调用场景决定。
+ * @param n 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_vofa_send_int(const char *tag, const int32_t *arr, uint16_t n)
 {
     //1. 默认上下文有符号整型数组发送封装
     return mod_vofa_send_int_ctx(mod_vofa_get_default_ctx(), tag, arr, n);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param tag 函数输入参数，语义由调用场景决定。
+ * @param arr 函数输入参数，语义由调用场景决定。
+ * @param n 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_vofa_send_uint(const char *tag, const uint32_t *arr, uint16_t n)
 {
     //1. 默认上下文无符号整型数组发送封装
     return mod_vofa_send_uint_ctx(mod_vofa_get_default_ctx(), tag, arr, n);
 }
 
+/**
+ * @brief 执行模块层设备控制与状态管理。
+ * @param str 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 bool mod_vofa_send_string(const char *str)
 {
     //1. 默认上下文字符串发送封装

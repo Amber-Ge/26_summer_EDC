@@ -1,12 +1,15 @@
-/**
- ******************************************************************************
+﻿/**
  * @file    mod_sensor.h
- * @brief   循迹传感器模块接口
+ * @author  姜凯中
+ * @version v1.0.0
+ * @date    2026-03-23
+ * @brief   循迹传感器模块接口。
  * @details
- * 1. 模块固定管理 12 路循迹传感器；
- * 2. 统一语义：检测到黑线返回 1，未检测到返回 0；
- * 3. 每一路可独立配置“黑线有效电平”。
- ******************************************************************************
+ * 1. 文件作用：统一管理 12 路循迹采样，输出黑线状态阵列与加权偏差值。
+ * 2. 解耦边界：本模块负责“原始电平 -> 语义状态/权重”转换，不负责控制决策与执行。
+ * 3. 上层绑定：`DccTask` 等控制任务周期读取 `states/weight` 参与闭环控制。
+ * 4. 下层依赖：通过 `drv_gpio` 读取输入电平，通道映射和权重由 bind 表注入。
+ * 5. 生命周期：先绑定映射并初始化，运行期按周期调用 update 或读取缓存结果。
  */
 #ifndef FINAL_GRADUATE_WORK_MOD_SENSOR_H
 #define FINAL_GRADUATE_WORK_MOD_SENSOR_H
@@ -70,3 +73,5 @@ bool mod_sensor_get_states(uint8_t *states, uint8_t states_num);
 float mod_sensor_get_weight(void);
 
 #endif /* FINAL_GRADUATE_WORK_MOD_SENSOR_H */
+
+

@@ -1,4 +1,11 @@
-﻿#include "task_stepper.h"
+﻿/**
+ * @file    task_stepper.c
+ * @brief   步进电机任务实现。
+ * @details
+ * 1. 文件作用：实现步进电机任务状态机、命令下发与调度控制。
+ * 2. 上下层绑定：上层由任务调度或业务逻辑调用；下层依赖 `mod_stepper` 协议发送能力。
+ */
+#include "task_stepper.h"
 #include "task_dcc.h"
 #include "task_init.h"
 #include "mod_vofa.h"
@@ -8,48 +15,54 @@
 #include <string.h>
 
 /* 串口发送互斥锁（在 freertos.c 中创建） */
-extern osMutexId_t PcMutexHandle;
+extern osMutexId_t PcMutexHandle; // 串口打印互斥锁句柄，避免并发输出冲突。
 
 /* 单轴运行时状态与控制上下文 */
 typedef struct
 {
-    mod_stepper_ctx_t ctx;           /* 步进协议上下文 */
-    uint8_t logic_id;                /* 逻辑轴 ID：1=X，2=Y */
-    int32_t pos_pulse;               /* 任务层估计位置（pulse） */
-    int32_t limit_abs;               /* 软限位绝对值（正数） */
-    uint8_t dir_invert;              /* 方向反相开关 */
-    pid_pos_t pos_pid;               /* 位置 PID（输出：每周期脉冲数） */
+    mod_stepper_ctx_t ctx;           // 步进协议上下文
+    uint8_t logic_id;                // 逻辑轴 ID：1=X，2=Y
+    int32_t pos_pulse;               // 任务层估计位置（pulse）
+    int32_t limit_abs;               // 软限位绝对值（正数）
+    uint8_t dir_invert;              // 方向反相开关
+    pid_pos_t pos_pid;               // 位置 PID（输出：每周期脉冲数）
 
-    uint8_t bound;                   /* 该轴是否绑定成功 */
-    uint32_t last_pulse_cmd;         /* 最近一次下发的脉冲命令 */
-    uint16_t last_speed_cmd;         /* 最近一次速度命令（rpm） */
-    mod_stepper_dir_e last_dir_cmd;  /* 最近一次方向命令 */
-    uint8_t last_dir_valid;          /* 最近方向命令是否有效 */
+    uint8_t bound;                   // 该轴是否绑定成功
+    uint32_t last_pulse_cmd;         // 最近一次下发的脉冲命令
+    uint16_t last_speed_cmd;         // 最近一次速度命令（rpm）
+    mod_stepper_dir_e last_dir_cmd;  // 最近一次方向命令
+    uint8_t last_dir_valid;          // 最近方向命令是否有效
 
-    uint32_t cmd_ok_count;           /* 命令成功计数 */
-    uint32_t cmd_drop_count;         /* 命令失败/丢弃计数 */
+    uint32_t cmd_ok_count;           // 命令成功计数
+    uint32_t cmd_drop_count;         // 命令失败/丢弃计数
 } task_stepper_axis_t;
 
 /* mode1（STRAIGHT）前馈状态：记录底盘编码器相邻采样差分 */
 typedef struct
 {
-    uint8_t inited;        /* 是否已经完成首帧初始化 */
-    int64_t left_prev_pos; /* 左电机上一次累计编码器值 */
-    int64_t right_prev_pos;/* 右电机上一次累计编码器值 */
-    int32_t left_delta;    /* 左电机本周期差分 */
-    int32_t right_delta;   /* 右电机本周期差分 */
+    uint8_t inited;        // 是否已经完成首帧初始化
+    int64_t left_prev_pos; // 左电机上一次累计编码器值
+    int64_t right_prev_pos;// 右电机上一次累计编码器值
+    int32_t left_delta;    // 左电机本周期差分
+    int32_t right_delta;   // 右电机本周期差分
 } task_stepper_mode1_ff_t;
 
 /* 任务级静态状态 */
-static bool s_stepper_ready = false;
-static task_stepper_state_t s_stepper_state;
-static task_stepper_axis_t s_axis_x;
-static task_stepper_axis_t s_axis_y;
-static task_stepper_mode1_ff_t s_mode1_ff;
+static bool s_stepper_ready = false; // Stepper 任务初始化完成标志
+static task_stepper_state_t s_stepper_state; // 对外只读状态快照
+static task_stepper_axis_t s_axis_x; // X 轴运行时控制上下文
+static task_stepper_axis_t s_axis_y; // Y 轴运行时控制上下文
+static task_stepper_mode1_ff_t s_mode1_ff; // STRAIGHT 模式前馈缓存
 
 /* 判断某逻辑轴是否允许下发控制命令（单轴联调时可屏蔽） */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param logic_id 函数输入参数，语义由调用场景决定。
+ * @return 布尔结果，`true` 表示满足条件。
+ */
 static bool task_stepper_is_axis_enabled(uint8_t logic_id)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if (logic_id == TASK_STEPPER_AXIS_X_ID)
     {
         return (TASK_STEPPER_ENABLE_X_AXIS != 0U);
@@ -62,14 +75,29 @@ static bool task_stepper_is_axis_enabled(uint8_t logic_id)
 }
 
 /* 返回两个无符号数中的较小值 */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param a 函数输入参数，语义由调用场景决定。
+ * @param b 函数输入参数，语义由调用场景决定。
+ * @return 返回计算结果或状态码，具体语义见实现。
+ */
 static uint32_t task_stepper_min_u32(uint32_t a, uint32_t b)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     return (a < b) ? a : b;
 }
 
 /* 有符号整型限幅 */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param value 函数输入参数，语义由调用场景决定。
+ * @param min 函数输入参数，语义由调用场景决定。
+ * @param max 函数输入参数，语义由调用场景决定。
+ * @return 返回计算结果或状态码，具体语义见实现。
+ */
 static int32_t task_stepper_clamp_i32(int32_t value, int32_t min, int32_t max)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if (value < min)
     {
         return min;
@@ -82,8 +110,14 @@ static int32_t task_stepper_clamp_i32(int32_t value, int32_t min, int32_t max)
 }
 
 /* int64 到 int32 的安全截断 */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param value 函数输入参数，语义由调用场景决定。
+ * @return 返回计算结果或状态码，具体语义见实现。
+ */
 static int32_t task_stepper_clamp_i64_to_i32(int64_t value)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if (value > (int64_t)INT32_MAX)
     {
         return INT32_MAX;
@@ -96,16 +130,28 @@ static int32_t task_stepper_clamp_i64_to_i32(int64_t value)
 }
 
 /* 复位 mode1 前馈缓存 */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param 无。
+ * @return 无。
+ */
 static void task_stepper_mode1_ff_reset(void)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     memset(&s_mode1_ff, 0, sizeof(s_mode1_ff));
 }
 
 /* 更新 mode1 前馈输入：读取底盘双电机编码器差分 */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param 无。
+ * @return 无。
+ */
 static void task_stepper_mode1_ff_update(void)
 {
-    int64_t left_pos;
-    int64_t right_pos;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    int64_t left_pos; // 控制量变量
+    int64_t right_pos; // 控制量变量
 
     left_pos = mod_motor_get_position(MOD_MOTOR_LEFT);
     right_pos = mod_motor_get_position(MOD_MOTOR_RIGHT);
@@ -130,8 +176,14 @@ static void task_stepper_mode1_ff_update(void)
  * X 轴：右-左（偏转相关）
  * Y 轴：(左+右)/2（平移相关）
  */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param axis 函数输入参数，语义由调用场景决定。
+ * @return 返回计算结果或状态码，具体语义见实现。
+ */
 static int32_t task_stepper_mode1_ff_get_axis_delta(const task_stepper_axis_t *axis)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if (axis == NULL)
     {
         return 0;
@@ -151,11 +203,17 @@ static int32_t task_stepper_mode1_ff_get_axis_delta(const task_stepper_axis_t *a
 }
 
 /* 计算 mode1 前馈输出并限幅（单位：pulse/cycle） */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param axis 函数输入参数，语义由调用场景决定。
+ * @return 返回计算结果或状态码，具体语义见实现。
+ */
 static float task_stepper_mode1_ff_get_output(const task_stepper_axis_t *axis)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
 #if (TASK_STEPPER_MODE1_FEEDFORWARD_ENABLE != 0U)
-    float ff_out;
-    float ff_k;
+    float ff_out; // 局部业务变量
+    float ff_k; // 局部业务变量
 
     if (axis == NULL)
     {
@@ -207,8 +265,14 @@ static task_stepper_axis_t *task_stepper_get_axis(uint8_t logic_id)
 }
 
 /* 初始化单轴位置 PID 参数 */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param axis 函数输入参数，语义由调用场景决定。
+ * @return 无。
+ */
 static void task_stepper_axis_pid_init(task_stepper_axis_t *axis)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if (axis == NULL)
     {
         return;
@@ -223,11 +287,17 @@ static void task_stepper_axis_pid_init(task_stepper_axis_t *axis)
 }
 
 /* 由“每周期脉冲数”反推速度命令（rpm，向上取整） */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param pulse 函数输入参数，语义由调用场景决定。
+ * @return 返回计算结果或状态码，具体语义见实现。
+ */
 static uint16_t task_stepper_calc_speed_from_pulse(uint32_t pulse)
 {
-    uint64_t numerator;
-    uint32_t denominator;
-    uint32_t speed_req;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint64_t numerator; // 局部业务变量
+    uint32_t denominator; // 局部业务变量
+    uint32_t speed_req; // 控制量变量
 
     if (pulse == 0U)
     {
@@ -255,10 +325,16 @@ static uint16_t task_stepper_calc_speed_from_pulse(uint32_t pulse)
 }
 
 /* 按当前速度估算本周期位移脉冲数 */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param speed_rpm 函数输入参数，语义由调用场景决定。
+ * @return 返回计算结果或状态码，具体语义见实现。
+ */
 static uint32_t task_stepper_calc_cycle_pulse_from_speed(uint16_t speed_rpm)
 {
-    uint64_t numerator;
-    uint32_t pulse_step;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint64_t numerator; // 局部业务变量
+    uint32_t pulse_step; // 控制量变量
 
     if (speed_rpm == 0U)
     {
@@ -266,7 +342,7 @@ static uint32_t task_stepper_calc_cycle_pulse_from_speed(uint16_t speed_rpm)
     }
 
     numerator = (uint64_t)speed_rpm * (uint64_t)TASK_STEPPER_PULSE_PER_REV * (uint64_t)TASK_STEPPER_PERIOD_MS;
-    pulse_step = (uint32_t)((numerator + 30000ULL) / 60000ULL); /* 四舍五入 */
+    pulse_step = (uint32_t)((numerator + 30000ULL) / 60000ULL); // 四舍五入
     if (pulse_step == 0U)
     {
         pulse_step = 1U;
@@ -281,7 +357,7 @@ static void task_stepper_get_motion_direction(task_stepper_axis_t *axis,
                                               mod_stepper_dir_e *dir_out,
                                               int32_t *motion_sign_out)
 {
-    int32_t sign;
+    int32_t sign; // 局部业务变量
 
     if ((axis == NULL) || (dir_out == NULL) || (motion_sign_out == NULL))
     {
@@ -304,7 +380,7 @@ static void task_stepper_get_direction_from_output(task_stepper_axis_t *axis,
                                                    mod_stepper_dir_e *dir_out,
                                                    int32_t *motion_sign_out)
 {
-    int32_t sign;
+    int32_t sign; // 局部业务变量
 
     if ((axis == NULL) || (dir_out == NULL) || (motion_sign_out == NULL))
     {
@@ -322,9 +398,16 @@ static void task_stepper_get_direction_from_output(task_stepper_axis_t *axis,
 }
 
 /* 按当前方向计算可用剩余行程（pulse） */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param axis 函数输入参数，语义由调用场景决定。
+ * @param motion_sign 函数输入参数，语义由调用场景决定。
+ * @return 返回计算结果或状态码，具体语义见实现。
+ */
 static uint32_t task_stepper_axis_get_remain_pulse(const task_stepper_axis_t *axis, int32_t motion_sign)
 {
-    int32_t remain;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    int32_t remain; // 局部业务变量
 
     if (axis == NULL)
     {
@@ -349,8 +432,14 @@ static uint32_t task_stepper_axis_get_remain_pulse(const task_stepper_axis_t *ax
 }
 
 /* 下发停机命令；若本来就停止，则只清本地缓存 */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param axis 函数输入参数，语义由调用场景决定。
+ * @return 返回计算结果或状态码，具体语义见实现。
+ */
 static uint8_t task_stepper_axis_send_stop(task_stepper_axis_t *axis)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if ((axis == NULL) || (axis->bound == 0U))
     {
         return 0U;
@@ -412,12 +501,18 @@ static uint8_t task_stepper_axis_send_position(task_stepper_axis_t *axis,
 }
 
 /* 在短时无新帧时，按“上次有效速度”推进位置估计并做限位保护 */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param axis 函数输入参数，语义由调用场景决定。
+ * @return 无。
+ */
 static void task_stepper_axis_update_pos_by_last_velocity(task_stepper_axis_t *axis)
 {
-    int32_t motion_sign;
-    uint32_t remain;
-    uint32_t pulse_step;
-    int32_t new_pos;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    int32_t motion_sign; // 局部业务变量
+    uint32_t remain; // 局部业务变量
+    uint32_t pulse_step; // 控制量变量
+    int32_t new_pos; // 控制量变量
 
     if (axis == NULL)
     {
@@ -451,17 +546,25 @@ static void task_stepper_axis_update_pos_by_last_velocity(task_stepper_axis_t *a
  * mode1（STRAIGHT）：PID + 前馈
  * mode2（TRACK）：PID
  */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param axis 函数输入参数，语义由调用场景决定。
+ * @param err 函数输入参数，语义由调用场景决定。
+ * @param mode 状态或模式控制参数。
+ * @return 无。
+ */
 static void task_stepper_axis_control(task_stepper_axis_t *axis, int16_t err, uint8_t mode)
 {
-    uint32_t remain;              /* 当前方向剩余可行程 */
-    uint32_t pulse_cmd;           /* 本周期下发脉冲数 */
-    uint16_t speed_cmd;           /* 本周期速度命令（rpm） */
-    float pid_out;                /* PID 输出（pulse/cycle） */
-    float ff_out = 0.0f;          /* 前馈输出（pulse/cycle） */
-    float cmd_out;                /* 最终控制输出：PID(+FF) */
-    mod_stepper_dir_e dir_cmd;    /* 电机方向命令 */
-    int32_t motion_sign = 1;      /* 方向符号（+1/-1） */
-    int32_t new_pos;              /* 新的任务层估计位置 */
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint32_t remain;              // 当前方向剩余可行程
+    uint32_t pulse_cmd;           // 本周期下发脉冲数
+    uint16_t speed_cmd;           // 本周期速度命令（rpm）
+    float pid_out;                // PID 输出（pulse/cycle）
+    float ff_out = 0.0f;          // 前馈输出（pulse/cycle）
+    float cmd_out;                // 最终控制输出：PID(+FF)
+    mod_stepper_dir_e dir_cmd;    // 电机方向命令
+    int32_t motion_sign = 1;      // 方向符号（+1/-1）
+    int32_t new_pos;              // 新的任务层估计位置
 
     if ((axis == NULL) || (axis->bound == 0U))
     {
@@ -552,10 +655,16 @@ static void task_stepper_axis_control(task_stepper_axis_t *axis, int16_t err, ui
 }
 
 /* Y 轴固定位置测试：忽略误差，每周期下发固定位置命令 */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param 无。
+ * @return 无。
+ */
 static void task_stepper_run_y_fixed_position(void)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
 #if (TASK_STEPPER_Y_FIXED_POSITION_ENABLE != 0U)
-    mod_stepper_dir_e dir_cmd;
+    mod_stepper_dir_e dir_cmd; // 局部业务变量
 
     if (!task_stepper_is_axis_enabled(TASK_STEPPER_AXIS_Y_ID))
     {
@@ -575,8 +684,14 @@ static void task_stepper_run_y_fixed_position(void)
 }
 
 /* 退出控制态时统一停机；被屏蔽轴仅清本地缓存，不下发串口 */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param 无。
+ * @return 无。
+ */
 static void task_stepper_try_stop_all(void)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     /* X 轴：启用时下发 STOP，禁用时仅清缓存 */
     if ((s_axis_x.bound != 0U) && task_stepper_is_axis_enabled(TASK_STEPPER_AXIS_X_ID))
     {
@@ -600,10 +715,16 @@ static void task_stepper_try_stop_all(void)
 }
 
 /* 读取 K230 最新一帧；无新帧返回 0 */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param 无。
+ * @return 返回计算结果或状态码，具体语义见实现。
+ */
 static uint8_t task_stepper_update_latest_k230_frame(void)
 {
-    mod_k230_ctx_t *k230_ctx;
-    mod_k230_frame_data_t frame;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    mod_k230_ctx_t *k230_ctx; // 模块变量，用于保存运行时状态。
+    mod_k230_frame_data_t frame; // 数据缓存变量
 
     k230_ctx = mod_k230_get_default_ctx();
     s_stepper_state.k230_bound = mod_k230_is_bound(k230_ctx);
@@ -627,8 +748,14 @@ static uint8_t task_stepper_update_latest_k230_frame(void)
 }
 
 /* 将 K230 两路误差按 motor_id 分发到 X/Y 轴控制 */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param mode 状态或模式控制参数。
+ * @return 无。
+ */
 static void task_stepper_apply_frame_control(uint8_t mode)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if ((s_stepper_state.motor1_id == TASK_STEPPER_AXIS_X_ID) &&
         task_stepper_is_axis_enabled(TASK_STEPPER_AXIS_X_ID))
     {
@@ -656,10 +783,16 @@ static void task_stepper_apply_frame_control(uint8_t mode)
 }
 
 /* 周期上报调试数据到 VOFA（当前仅发送 err1/err2） */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param 无。
+ * @return 无。
+ */
 static void task_stepper_send_state_to_vofa(void)
 {
-    mod_vofa_ctx_t *vofa_ctx;
-    float err_payload[2];
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    mod_vofa_ctx_t *vofa_ctx; // VOFA 上下文指针
+    float err_payload[2]; // VOFA 发送误差数据缓存
 
     vofa_ctx = mod_vofa_get_default_ctx();
     s_stepper_state.vofa_bound = mod_vofa_is_bound(vofa_ctx);
@@ -682,10 +815,18 @@ static void task_stepper_send_state_to_vofa(void)
 }
 
 /* 绑定单轴串口与驱动地址 */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param axis 函数输入参数，语义由调用场景决定。
+ * @param huart 函数输入参数，语义由调用场景决定。
+ * @param driver_addr 函数输入参数，语义由调用场景决定。
+ * @return 返回计算结果或状态码，具体语义见实现。
+ */
 static uint8_t task_stepper_bind_axis(task_stepper_axis_t *axis, UART_HandleTypeDef *huart, uint8_t driver_addr)
 {
-    mod_stepper_bind_t bind;
-    uint8_t ok;
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    mod_stepper_bind_t bind; // 上下文或配置变量
+    uint8_t ok; // 执行状态变量
 
     if ((axis == NULL) || (huart == NULL) || (driver_addr == 0U))
     {
@@ -711,8 +852,15 @@ static uint8_t task_stepper_bind_axis(task_stepper_axis_t *axis, UART_HandleType
 }
 
 /* 刷新对外只读状态快照 */
+/**
+ * @brief 执行任务层流程控制与业务调度。
+ * @param dcc_mode 状态或模式控制参数。
+ * @param dcc_run_state 状态或模式控制参数。
+ * @return 无。
+ */
 static void task_stepper_refresh_public_state(uint8_t dcc_mode, uint8_t dcc_run_state)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     s_stepper_state.x_axis_bound = (s_axis_x.bound != 0U);
     s_stepper_state.y_axis_bound = (s_axis_y.bound != 0U);
     s_stepper_state.dcc_mode = dcc_mode;
@@ -739,10 +887,16 @@ static void task_stepper_refresh_public_state(uint8_t dcc_mode, uint8_t dcc_run_
  * 2) 配置 X/Y 轴限位、反相和 PID
  * 3) 绑定对应串口
  */
+/**
+ * @brief 准备 Stepper 双轴通道：清状态、配置 PID、绑定串口与驱动地址。
+ * @param 无。
+ * @return 至少完成当前使能轴绑定时返回 `true`，否则返回 `false`。
+ */
 bool task_stepper_prepare_channels(void)
 {
-    uint8_t x_ok; /* X 轴绑定结果 */
-    uint8_t y_ok; /* Y 轴绑定结果 */
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint8_t x_ok; // X 轴绑定结果
+    uint8_t y_ok; // Y 轴绑定结果
 
     memset(&s_stepper_state, 0, sizeof(s_stepper_state));
     memset(&s_axis_x, 0, sizeof(s_axis_x));
@@ -791,16 +945,32 @@ bool task_stepper_prepare_channels(void)
 }
 
 /* 查询 Stepper 任务是否已完成初始化 */
+/**
+ * @brief 查询 Stepper 通道是否已准备完成。
+ * @param 无。
+ * @return 已准备完成返回 `true`，否则返回 `false`。
+ */
 bool task_stepper_is_ready(void)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     return s_stepper_ready;
 }
 
 /* 对外速度命令接口：检查轴状态并做速度限幅 */
+/**
+ * @brief 向指定轴发送速度模式命令（带状态检查和速度限幅）。
+ * @param logic_id 逻辑轴 ID（`1`=X，`2`=Y）。
+ * @param dir 目标方向。
+ * @param vel_rpm 目标速度（rpm）。
+ * @param acc 加速度参数（透传给协议层）。
+ * @param sync_flag 是否启用同步执行标志。
+ * @return 发送成功返回 `true`，否则返回 `false`。
+ */
 bool task_stepper_send_velocity(uint8_t logic_id, mod_stepper_dir_e dir, uint16_t vel_rpm, uint8_t acc, bool sync_flag)
 {
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     task_stepper_axis_t *axis = task_stepper_get_axis(logic_id);
-    uint16_t speed_limited = vel_rpm;
+    uint16_t speed_limited = vel_rpm; // 控制量变量
 
     if (!task_stepper_is_axis_enabled(logic_id))
     {
@@ -821,6 +991,17 @@ bool task_stepper_send_velocity(uint8_t logic_id, mod_stepper_dir_e dir, uint16_
 }
 
 /* 对外位置命令接口：检查轴状态并做速度限幅 */
+/**
+ * @brief 向指定轴发送位置模式命令（带状态检查和速度限幅）。
+ * @param logic_id 逻辑轴 ID（`1`=X，`2`=Y）。
+ * @param dir 目标方向。
+ * @param vel_rpm 目标速度（rpm）。
+ * @param acc 加速度参数（透传给协议层）。
+ * @param pulse 本次位置命令脉冲数。
+ * @param absolute_mode 是否绝对位置模式。
+ * @param sync_flag 是否启用同步执行标志。
+ * @return 发送成功返回 `true`，否则返回 `false`。
+ */
 bool task_stepper_send_position(uint8_t logic_id,
                                 mod_stepper_dir_e dir,
                                 uint16_t vel_rpm,
@@ -830,7 +1011,7 @@ bool task_stepper_send_position(uint8_t logic_id,
                                 bool sync_flag)
 {
     task_stepper_axis_t *axis = task_stepper_get_axis(logic_id);
-    uint16_t speed_limited = vel_rpm;
+    uint16_t speed_limited = vel_rpm; // 控制量变量
 
     if (!task_stepper_is_axis_enabled(logic_id))
     {
@@ -855,14 +1036,20 @@ bool task_stepper_send_position(uint8_t logic_id,
  * 2) ON 且 mode1/mode2 时执行视觉闭环
  * 3) 丢帧时执行短时容忍与保护停机
  */
+/**
+ * @brief Stepper 任务主循环：按 DCC 状态执行视觉闭环、丢帧容错与状态上报。
+ * @param argument 任务参数（未使用）。
+ * @return 无。
+ */
 void StartStepperTask(void *argument)
 {
-    uint8_t dcc_mode;                     /* 当前 DCC 模式 */
-    uint8_t dcc_run_state;                /* 当前 DCC 运行状态 */
-    uint8_t control_enable;               /* 当前周期是否允许闭环控制 */
-    uint8_t prev_control_enable = 0U;     /* 上周期控制使能状态 */
-    uint8_t prev_dcc_mode = TASK_DCC_MODE_IDLE; /* 上周期 DCC 模式 */
-    uint8_t no_frame_cycle_count = 0U;    /* 连续无新帧计数 */
+    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
+    uint8_t dcc_mode;                     // 当前 DCC 模式
+    uint8_t dcc_run_state;                // 当前 DCC 运行状态
+    uint8_t control_enable;               // 当前周期是否允许闭环控制
+    uint8_t prev_control_enable = 0U;     // 上周期控制使能状态
+    uint8_t prev_dcc_mode = TASK_DCC_MODE_IDLE; // 上周期 DCC 模式
+    uint8_t no_frame_cycle_count = 0U;    // 连续无新帧计数
 
     (void)argument;
 
@@ -870,7 +1057,7 @@ void StartStepperTask(void *argument)
 
 #if (TASK_STEPPER_STARTUP_ENABLE == 0U)
     (void)osThreadSuspend(osThreadGetId());
-    for (;;)
+    for (;;) // 循环计数器
     {
         osDelay(osWaitForever);
     }
@@ -881,7 +1068,7 @@ void StartStepperTask(void *argument)
         (void)task_stepper_prepare_channels();
     }
 
-    for (;;)
+    for (;;) // 循环计数器
     {
         dcc_mode = task_dcc_get_mode();
         dcc_run_state = task_dcc_get_run_state();
@@ -996,6 +1183,11 @@ void StartStepperTask(void *argument)
 }
 
 /* 获取只读状态快照（logic_id 当前保留） */
+/**
+ * @brief 获取 Stepper 任务对外状态快照。
+ * @param logic_id 预留参数（当前实现忽略）。
+ * @return 初始化完成时返回状态指针，否则返回 `NULL`。
+ */
 const task_stepper_state_t *task_stepper_get_state(uint8_t logic_id)
 {
     (void)logic_id;
@@ -1007,3 +1199,6 @@ const task_stepper_state_t *task_stepper_get_state(uint8_t logic_id)
 
     return &s_stepper_state;
 }
+
+
+

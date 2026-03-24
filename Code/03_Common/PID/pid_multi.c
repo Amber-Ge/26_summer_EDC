@@ -1,3 +1,10 @@
+﻿/**
+ * @file    pid_multi.c
+ * @brief   多环 PID 组合实现。
+ * @details
+ * 1. 文件作用：实现多路 PID 组合控制与调参辅助逻辑。
+ * 2. 上下层绑定：上层由任务层控制流程调用；下层依赖 PID 基础算法模块。
+ */
 #include "pid_multi.h"
 #include <stddef.h>
 
@@ -57,6 +64,13 @@
 #endif
 
 // 浮点限幅工具函数：把输入约束到 [min, max] 区间
+/**
+ * @brief 对浮点值执行区间限幅。
+ * @param value 待限幅值。
+ * @param min 下限值。
+ * @param max 上限值。
+ * @return 限幅后的值。
+ */
 static float clamp_float(float value, float min, float max)
 {
     float result = value; // 1. 默认输出原值
@@ -73,6 +87,15 @@ static float clamp_float(float value, float min, float max)
 }
 
 // 根据算法类型运行一个 PID 环（位置式或增量式）
+/**
+ * @brief 根据算法类型运行单个 PID 环并返回输出。
+ * @param algo 算法类型（位置式或增量式）。
+ * @param pos 位置式 PID 对象。
+ * @param inc 增量式 PID 对象。
+ * @param target 目标值。
+ * @param measure 测量值。
+ * @return 当前环输出。
+ */
 static float run_single_loop(pid_algo_e algo, pid_pos_t *pos, pid_inc_t *inc, float target, float measure)
 {
     float output = 0.0f; // 1. 默认输出
@@ -92,6 +115,11 @@ static float run_single_loop(pid_algo_e algo, pid_pos_t *pos, pid_inc_t *inc, fl
     return output; // 3. 返回当前环输出
 }
 
+/**
+ * @brief 初始化多环 PID 对象及默认参数。
+ * @param multi 多环 PID 对象指针。
+ * @return 无。
+ */
 void PID_Multi_Init(pid_multi_t *multi)
 {
     // 1. 空指针保护
@@ -138,6 +166,11 @@ void PID_Multi_Init(pid_multi_t *multi)
     }
 }
 
+/**
+ * @brief 复位多环 PID 运行时状态。
+ * @param multi 多环 PID 对象指针。
+ * @return 无。
+ */
 void PID_Multi_Reset(pid_multi_t *multi)
 {
     // 1. 空指针保护
@@ -158,6 +191,12 @@ void PID_Multi_Reset(pid_multi_t *multi)
     }
 }
 
+/**
+ * @brief 设置是否启用串级模式。
+ * @param multi 多环 PID 对象指针。
+ * @param enable 非零启用串级，零表示单环直控。
+ * @return 无。
+ */
 void PID_Multi_SetCascadeEnable(pid_multi_t *multi, uint8_t enable)
 {
     // 1. 空指针保护
@@ -166,6 +205,12 @@ void PID_Multi_SetCascadeEnable(pid_multi_t *multi, uint8_t enable)
         multi->cascade_enable = (enable != 0U) ? 1U : 0U;
 }
 
+/**
+ * @brief 设置外环算法类型。
+ * @param multi 多环 PID 对象指针。
+ * @param algo 外环算法类型。
+ * @return 无。
+ */
 void PID_Multi_SetOuterAlgo(pid_multi_t *multi, pid_algo_e algo)
 {
     // 1. 空指针保护
@@ -175,6 +220,12 @@ void PID_Multi_SetOuterAlgo(pid_multi_t *multi, pid_algo_e algo)
             multi->outer_algo = algo;
 }
 
+/**
+ * @brief 设置内环算法类型。
+ * @param multi 多环 PID 对象指针。
+ * @param algo 内环算法类型。
+ * @return 无。
+ */
 void PID_Multi_SetInnerAlgo(pid_multi_t *multi, pid_algo_e algo)
 {
     // 1. 空指针保护
@@ -184,6 +235,12 @@ void PID_Multi_SetInnerAlgo(pid_multi_t *multi, pid_algo_e algo)
             multi->inner_algo = algo;
 }
 
+/**
+ * @brief 设置多环控制总目标值。
+ * @param multi 多环 PID 对象指针。
+ * @param target 总目标值。
+ * @return 无。
+ */
 void PID_Multi_SetTarget(pid_multi_t *multi, float target)
 {
     // 1. 空指针保护
@@ -191,9 +248,16 @@ void PID_Multi_SetTarget(pid_multi_t *multi, float target)
         multi->target = target;
 }
 
+/**
+ * @brief 设置内环目标限幅区间。
+ * @param multi 多环 PID 对象指针。
+ * @param target_min 内环目标下限。
+ * @param target_max 内环目标上限。
+ * @return 无。
+ */
 void PID_Multi_SetInnerTargetLimit(pid_multi_t *multi, float target_min, float target_max)
 {
-    float temp;
+    float temp; // 临时计算变量
     // 1. 空指针保护
     if (multi != NULL)
     {
@@ -212,6 +276,13 @@ void PID_Multi_SetInnerTargetLimit(pid_multi_t *multi, float target_min, float t
     }
 }
 
+/**
+ * @brief 执行一次多环 PID 计算，返回最终内环输出。
+ * @param multi 多环 PID 对象指针。
+ * @param outer_feedback 外环反馈值。
+ * @param inner_feedback 内环反馈值。
+ * @return 最终控制输出。
+ */
 float PID_Multi_Compute(pid_multi_t *multi, float outer_feedback, float inner_feedback)
 {
     float outer_output = 0.0f; // 外环输出（串级时作为内环目标）
@@ -256,3 +327,4 @@ float PID_Multi_Compute(pid_multi_t *multi, float outer_feedback, float inner_fe
 
     return final_output; // 7. 返回有效输出
 }
+
