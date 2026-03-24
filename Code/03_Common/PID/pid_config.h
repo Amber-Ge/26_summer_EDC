@@ -13,7 +13,7 @@
 /* ========================= 控制目标默认值 ========================= */
 
 /** 底盘默认目标速度。 */
-#define MOTOR_TARGET_SPEED (10)
+#define MOTOR_TARGET_SPEED (40)
 /** 底盘默认目标误差（保留项）。 */
 #define MOTOR_TARGET_ERROR (0)
 

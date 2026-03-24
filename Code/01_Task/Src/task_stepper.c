@@ -179,8 +179,8 @@ static void task_stepper_mode1_ff_update(void)
 /**
  * @brief 按逻辑轴获取前馈原始差分。
  * @details
- * 1. X 轴使用 `right_delta - left_delta`（偏转相关）。
- * 2. Y 轴使用 `(right_delta + left_delta) / 2`（平移相关）。
+ * 1. X 轴使用 `-left_delta`（左轮累计编码器相邻采样差值取反，用于匹配当前机械方向定义）。
+ * 2. Y 轴使用 `(right_delta + left_delta) / 2`（预留：平移相关）。
  * @param axis 目标轴对象。
  * @return 对应轴的原始差分值；参数无效返回 0。
  */
@@ -193,7 +193,7 @@ static int32_t task_stepper_mode1_ff_get_axis_delta(const task_stepper_axis_t *a
 
     if (axis->logic_id == TASK_STEPPER_AXIS_X_ID)
     {
-        return (s_mode1_ff.right_delta - s_mode1_ff.left_delta);
+        return -s_mode1_ff.left_delta;
     }
 
     if (axis->logic_id == TASK_STEPPER_AXIS_Y_ID)
@@ -566,7 +566,7 @@ static void task_stepper_axis_update_pos_by_last_velocity(task_stepper_axis_t *a
 /**
  * @brief 单轴控制入口函数。
  * @details
- * 1. STRAIGHT 模式：PID 输出叠加前馈输出。
+ * 1. STRAIGHT 模式（当前联调策略）：X 轴 PID+前馈，Y 轴仅 PID。
  * 2. TRACK 模式：仅使用 PID 输出并启用误差死区停机。
  * 3. 统一执行方向判定、软限位保护、速度反推与命令下发。
  * @param axis 目标轴对象。
@@ -580,7 +580,7 @@ static void task_stepper_axis_control(task_stepper_axis_t *axis, int16_t err, ui
     uint16_t speed_cmd;           /* 本周期速度命令（rpm） */
     float pid_out;                /* PID 输出（pulse/cycle） */
     float ff_out = 0.0f;          /* 前馈输出（pulse/cycle） */
-    float cmd_out;                /* 最终控制输出：PID(+FF) */
+    float cmd_out;                /* 最终控制输出（按轴/模式组合） */
     mod_stepper_dir_e dir_cmd;    /* 电机方向命令 */
     int32_t motion_sign = 1;      /* 方向符号（+1/-1） */
     int32_t new_pos;              /* 新的任务层估计位置 */
@@ -611,11 +611,20 @@ static void task_stepper_axis_control(task_stepper_axis_t *axis, int16_t err, ui
         pid_out = PID_Pos_Compute(&axis->pos_pid, 0.0f);
     }
 
-    /* 步骤3：按模式决定是否叠加前馈输出。 */
+    /* 步骤3：按模式与轴类型组合控制输出。 */
     if ((mode == TASK_DCC_MODE_STRAIGHT) && (TASK_STEPPER_MODE1_FEEDFORWARD_ENABLE != 0U))
     {
-        ff_out = task_stepper_mode1_ff_get_output(axis);
-        cmd_out = pid_out + ff_out;
+        if (axis->logic_id == TASK_STEPPER_AXIS_X_ID)
+        {
+            /* X 轴：恢复 PID 与前馈叠加控制。 */
+            ff_out = task_stepper_mode1_ff_get_output(axis);
+            cmd_out = pid_out + ff_out;
+        }
+        else
+        {
+            /* Y 轴当前不使用前馈，仅保留 PID 控制。 */
+            cmd_out = pid_out;
+        }
     }
     else
     {

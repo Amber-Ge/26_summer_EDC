@@ -1,8 +1,8 @@
 ﻿/**
  * @file    mod_vofa.h
  * @author  姜凯中
- * @version v1.0.0
- * @date    2026-03-23
+ * @version v1.00
+ * @date    2026-03-24
  * @brief   VOFA 通信模块接口。
  * @details
  * 1. 文件作用：封装 VOFA 协议通道的发送、接收、命令解析与上下文管理。
@@ -57,32 +57,128 @@ typedef struct
 
 /* ========================== [ Ctx-based API ] ========================== */
 
+/**
+ * @brief 获取默认上下文实例。
+ */
 mod_vofa_ctx_t *mod_vofa_get_default_ctx(void);
+
+/**
+ * @brief 初始化 VOFA 上下文，可选立即绑定。
+ * @param ctx 目标上下文。
+ * @param bind 可选绑定参数；传 NULL 则仅初始化。
+ * @return true 成功；false 失败。
+ */
 bool mod_vofa_ctx_init(mod_vofa_ctx_t *ctx, const mod_vofa_bind_t *bind);
+
+/**
+ * @brief 反初始化上下文并释放已绑定 UART 资源。
+ * @param ctx 目标上下文。
+ */
+void mod_vofa_ctx_deinit(mod_vofa_ctx_t *ctx);
+
+/**
+ * @brief 绑定上下文到指定 UART 与同步资源。
+ * @param ctx 目标上下文。
+ * @param bind 绑定参数（huart 必填）。
+ * @return true 成功；false 失败。
+ */
 bool mod_vofa_bind(mod_vofa_ctx_t *ctx, const mod_vofa_bind_t *bind);
+
+/**
+ * @brief 解绑上下文，停止接收并释放 UART 归属权。
+ * @param ctx 目标上下文。
+ */
 void mod_vofa_unbind(mod_vofa_ctx_t *ctx);
+
+/**
+ * @brief 判断上下文是否处于可工作绑定状态。
+ */
 bool mod_vofa_is_bound(const mod_vofa_ctx_t *ctx);
 
+/**
+ * @brief 追加一个通知信号量。
+ * @details
+ * 同一信号量重复添加视为成功，不会重复占用槽位。
+ */
 bool mod_vofa_add_semaphore(mod_vofa_ctx_t *ctx, osSemaphoreId_t sem_id);
+
+/**
+ * @brief 移除一个通知信号量。
+ * @details
+ * 若信号量不存在返回 false；存在则删除并压缩列表。
+ */
 bool mod_vofa_remove_semaphore(mod_vofa_ctx_t *ctx, osSemaphoreId_t sem_id);
+
+/**
+ * @brief 清空全部通知信号量绑定。
+ */
 void mod_vofa_clear_semaphores(mod_vofa_ctx_t *ctx);
+
+/**
+ * @brief 配置发送互斥锁。
+ * @param mutex_id 互斥锁句柄；传 NULL 表示关闭发送互斥保护。
+ */
 void mod_vofa_set_tx_mutex(mod_vofa_ctx_t *ctx, osMutexId_t mutex_id);
 
+/**
+ * @brief 读取并清空最近一次命令解析结果。
+ * @return vofa_cmd_id_t 最近一次命令；无命令返回 `VOFA_CMD_NONE`。
+ */
 vofa_cmd_id_t mod_vofa_get_command_ctx(mod_vofa_ctx_t *ctx);
+
+/**
+ * @brief 发送浮点数组，格式为 `tag:v1,v2,...\\n`。
+ */
 bool mod_vofa_send_float_ctx(mod_vofa_ctx_t *ctx, const char *tag, const float *arr, uint16_t n);
+
+/**
+ * @brief 发送有符号整型数组，格式为 `tag:v1,v2,...\\n`。
+ */
 bool mod_vofa_send_int_ctx(mod_vofa_ctx_t *ctx, const char *tag, const int32_t *arr, uint16_t n);
+
+/**
+ * @brief 发送无符号整型数组，格式为 `tag:v1,v2,...\\n`。
+ */
 bool mod_vofa_send_uint_ctx(mod_vofa_ctx_t *ctx, const char *tag, const uint32_t *arr, uint16_t n);
+
+/**
+ * @brief 发送原始字符串，并自动追加换行符。
+ */
 bool mod_vofa_send_string_ctx(mod_vofa_ctx_t *ctx, const char *str);
 
 /* ========================== [ Legacy Compatible API ] ========================== */
 
+/**
+ * @brief 兼容初始化接口（默认上下文）。
+ */
 void mod_vofa_init(UART_HandleTypeDef *huart, osSemaphoreId_t sem_id);
+
+/**
+ * @brief 兼容命令读取接口（默认上下文）。
+ */
 vofa_cmd_id_t mod_vofa_get_command(void);
+
+/**
+ * @brief 兼容浮点数组发送接口（默认上下文）。
+ */
 bool mod_vofa_send_float(const char *tag, const float *arr, uint16_t n);
+
+/**
+ * @brief 兼容有符号整型数组发送接口（默认上下文）。
+ */
 bool mod_vofa_send_int(const char *tag, const int32_t *arr, uint16_t n);
+
+/**
+ * @brief 兼容无符号整型数组发送接口（默认上下文）。
+ */
 bool mod_vofa_send_uint(const char *tag, const uint32_t *arr, uint16_t n);
+
+/**
+ * @brief 兼容字符串发送接口（默认上下文）。
+ */
 bool mod_vofa_send_string(const char *str);
 
 #endif
+
 
 

@@ -1,7 +1,7 @@
 ﻿/**
  * @file    mod_k230.h
  * @author  姜凯中
- * @version v1.0.0
+ * @version v1.00
  * @date    2026-03-23
  * @brief   K230 协议模块接口（绑定驱动版）。
  * @details

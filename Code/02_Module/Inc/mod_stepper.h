@@ -1,8 +1,8 @@
 ﻿/**
  * @file    mod_stepper.h
  * @author  姜凯中
- * @version v1.0.0
- * @date    2026-03-23
+ * @version v1.00
+ * @date    2026-03-24
  * @brief   步进电机协议模块接口（TX Only）。
  * @details
  * 1. 文件作用：封装步进驱动协议组帧和发送链路，提供速度/位置/停机等命令接口。
@@ -126,6 +126,12 @@ typedef struct
 bool mod_stepper_ctx_init(mod_stepper_ctx_t *ctx, const mod_stepper_bind_t *bind);
 
 /**
+ * @brief 反初始化上下文并释放 UART 绑定资源。
+ * @param ctx 目标上下文。
+ */
+void mod_stepper_ctx_deinit(mod_stepper_ctx_t *ctx);
+
+/**
  * @brief 兼容别名：与 mod_stepper_ctx_init 功能一致。
  */
 bool mod_stepper_init(mod_stepper_ctx_t *ctx, const mod_stepper_bind_t *bind);
@@ -195,5 +201,6 @@ bool mod_stepper_position(mod_stepper_ctx_t *ctx, mod_stepper_dir_e dir, uint16_
 bool mod_stepper_stop(mod_stepper_ctx_t *ctx, bool sync_flag);
 
 #endif /* FINAL_GRADUATE_WORK_MOD_STEPPER_H */
+
 
 

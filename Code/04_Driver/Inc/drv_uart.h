@@ -1,15 +1,15 @@
 ﻿/**
  * @file    drv_uart.h
  * @author  姜凯中
- * @version v1.0.0
- * @date    2026-03-23
- * @brief   UART 驱动层接口定义。
+ * @version v1.00
+ * @date    2026-03-24
+ * @brief   UART 通用驱动接口。
  * @details
- * 1. 文件作用：提供 UART 阻塞/非阻塞收发、DMA 收发和接收回调注册能力。
- * 2. 解耦边界：驱动层只处理字节流传输，不解析协议帧、不做业务命令分发。
- * 3. 上层绑定：`mod_vofa`、`mod_k230`、`mod_stepper` 等模块复用该传输接口。
- * 4. 下层依赖：依赖 HAL UART 与 DMA 接口，串口句柄来源于 `usart.h`。
- * 5. 生命周期：句柄必须由 Core 初始化完成；回调注册后由中断/DMA 驱动触发。
+ * 1. 文件作用：为上层提供统一 UART 发送、DMA 接收、回调分发、端口索引映射能力。
+ * 2. 解耦边界：驱动层只处理“字节流 + 事件”，不关心 VOFA/K230/Stepper 等协议语义。
+ * 3. 上层绑定：协议层通过 `register_rx_callback + user_ctx` 绑定自己的上下文。
+ * 4. 下层依赖：HAL UART/HAL UARTEx/HAL DMA。
+ * 5. 兼容策略：保留旧版 `bool` 风格 API，新代码可优先使用 `*_ex` 状态码 API。
  */
 #ifndef FINAL_GRADUATE_WORK_DRV_UART_H
 #define FINAL_GRADUATE_WORK_DRV_UART_H
@@ -17,110 +17,155 @@
 #include "usart.h"
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 
 /**
- * @brief UART 接收回调函数类型。
- * @details
- * 当串口收到一帧数据并触发接收事件时，驱动层会调用该回调函数。
- * @param len 本次收到的数据长度（字节）。
- * @return 无返回值。
+ * @brief 支持的 UART 端口数量。
+ */
+#define DRV_UART_PORT_COUNT (6U)
+
+/**
+ * @brief 旧版接收回调类型（兼容保留）。
  */
 typedef void (*drv_uart_rx_callback_t)(uint16_t len);
 
 /**
- * @brief UART 驱动初始化接口。
+ * @brief 驱动状态码。
+ */
+typedef enum
+{
+    DRV_UART_OK = 0U,         // 操作成功
+    DRV_UART_ERR_PARAM,       // 参数非法
+    DRV_UART_ERR_UNSUPPORTED, // UART 实例不在受支持列表
+    DRV_UART_ERR_BUSY,        // 通道忙（例如 TX 正在发送）
+    DRV_UART_ERR_HAL          // HAL 调用失败
+} drv_uart_status_t;
+
+/**
+ * @brief DMA 接收事件类型（由 HAL 事件映射而来）。
+ */
+typedef enum
+{
+    DRV_UART_RX_EVENT_IDLE = 0U, // 空闲线触发（一帧结束）
+    DRV_UART_RX_EVENT_TC,        // DMA 传输完成
+    DRV_UART_RX_EVENT_HT,        // DMA 半传输完成
+    DRV_UART_RX_EVENT_UNKNOWN    // 未知事件
+} drv_uart_rx_event_t;
+
+/**
+ * @brief 新版接收回调类型（推荐）。
+ * @param huart 触发事件的 UART 句柄。
+ * @param event 本次 RX 事件类型。
+ * @param data DMA 缓冲区首地址（即 start 时传入的 p_buf）。
+ * @param len 本次有效数据长度（字节）。
+ * @param user_ctx 注册时透传的用户上下文指针。
+ */
+typedef void (*drv_uart_rx_callback_ex_t)(UART_HandleTypeDef *huart,
+                                          drv_uart_rx_event_t event,
+                                          const uint8_t *data,
+                                          uint16_t len,
+                                          void *user_ctx);
+
+/**
+ * @brief 将 UART 实例映射为固定端口索引。
+ * @param instance UART 硬件实例指针。
+ * @return int8_t 成功返回 [0, DRV_UART_PORT_COUNT-1]，失败返回 -1。
+ */
+int8_t drv_uart_get_port_index(USART_TypeDef *instance);
+
+/**
+ * @brief UART 驱动初始化。
  * @details
- * 当前版本保留该接口用于后续扩展；若无特殊初始化需求，可为空实现。
- * @return 无返回值。
+ * 清零内部端口上下文表；通常在系统初始化阶段调用一次。
  */
 void drv_uart_init(void);
 
 /**
  * @brief 阻塞发送单字节。
- * @param huart UART 句柄指针。
- * @param data 待发送字节。
- * @return 无返回值。
  */
 void drv_uart_send_byte_blocking(UART_HandleTypeDef *huart, uint8_t data);
 
 /**
  * @brief 阻塞发送字符串。
- * @param huart UART 句柄指针。
- * @param str 待发送字符串（以 `\0` 结尾）。
- * @param timeout_ms 阻塞超时时间（ms）。
- * @return 无返回值。
  */
 void drv_uart_send_string_blocking(UART_HandleTypeDef *huart, const char *str, uint32_t timeout_ms);
 
 /**
  * @brief 阻塞发送缓冲区。
- * @param huart UART 句柄指针。
- * @param buf 待发送数据缓冲区。
- * @param len 发送长度（字节）。
- * @param timeout_ms 阻塞超时时间（ms）。
- * @return 无返回值。
  */
 void drv_uart_send_buffer_blocking(UART_HandleTypeDef *huart, const uint8_t *buf, uint16_t len, uint32_t timeout_ms);
 
 /**
  * @brief 阻塞读取单字节。
- * @param huart UART 句柄指针。
- * @param out 输出参数，用于返回读取到的字节。
- * @param timeout_ms 阻塞超时时间（ms）。
- * @return true 读取成功。
- * @return false 参数无效或读取失败/超时。
  */
 bool drv_uart_read_byte_blocking(UART_HandleTypeDef *huart, uint8_t *out, uint32_t timeout_ms);
 
 /**
- * @brief 判断 UART 发送通道是否空闲。
- * @param huart UART 句柄指针。
- * @return true 当前可启动发送。
- * @return false 当前忙或参数无效。
+ * @brief 查询 TX 通道是否空闲。
  */
 bool drv_uart_is_tx_free(UART_HandleTypeDef *huart);
 
 /**
- * @brief 启动 DMA 异步发送。
- * @details
- * 调用成功后 DMA 在后台发送数据，函数立即返回。
- * @param huart UART 句柄指针。
- * @param buf 发送数据缓冲区。
- * @param len 发送长度（字节）。
- * @return true DMA 启动成功。
- * @return false 参数无效或通道忙。
+ * @brief DMA 发送（状态码版）。
+ */
+drv_uart_status_t drv_uart_send_dma_ex(UART_HandleTypeDef *huart, const uint8_t *buf, uint16_t len);
+
+/**
+ * @brief DMA 发送（兼容 bool 版）。
  */
 bool drv_uart_send_dma(UART_HandleTypeDef *huart, const uint8_t *buf, uint16_t len);
 
 /**
- * @brief 启动 DMA 异步接收（IDLE 帧结束判定）。
- * @details
- * 接收完成后会进入 HAL 接收事件回调，并分发给已注册用户回调。
- * @param huart UART 句柄指针。
- * @param p_buf 接收缓冲区地址。
- * @param max_len 缓冲区最大长度（字节）。
- * @return true 接收启动成功。
- * @return false 参数无效或启动失败。
+ * @brief 启动 ReceiveToIdle DMA 接收（状态码版）。
+ */
+drv_uart_status_t drv_uart_receive_dma_start_ex(UART_HandleTypeDef *huart, uint8_t *p_buf, uint16_t max_len);
+
+/**
+ * @brief 停止 DMA 接收（状态码版）。
+ */
+drv_uart_status_t drv_uart_receive_dma_stop_ex(UART_HandleTypeDef *huart);
+
+/**
+ * @brief 重启 DMA 接收（先 stop 再 start，状态码版）。
+ */
+drv_uart_status_t drv_uart_receive_dma_restart_ex(UART_HandleTypeDef *huart, uint8_t *p_buf, uint16_t max_len);
+
+/**
+ * @brief 启动 DMA 接收（兼容 bool 版）。
  */
 bool drv_uart_receive_dma_start(UART_HandleTypeDef *huart, uint8_t *p_buf, uint16_t max_len);
 
 /**
- * @brief 停止 UART 异步接收。
- * @param huart UART 句柄指针。
- * @return 无返回值。
+ * @brief 停止 DMA 接收（兼容 void 版）。
  */
 void drv_uart_receive_dma_stop(UART_HandleTypeDef *huart);
 
 /**
- * @brief 注册 UART 接收回调函数。
+ * @brief 关闭 RX DMA 半传输中断（HT）。
  * @details
- * 驱动层会根据串口实例分发接收事件到对应回调。
- * @param huart UART 句柄指针。
- * @param callback 用户接收回调函数。
- * @return true 注册成功。
- * @return false 参数无效或串口不受支持。
+ * 适用于希望只处理 IDLE/TC 的协议场景，避免 HT 打断解析流程。
+ */
+drv_uart_status_t drv_uart_disable_rx_dma_half_transfer_irq(UART_HandleTypeDef *huart);
+
+/**
+ * @brief 注册新版接收回调（带 user_ctx）。
+ * @details
+ * 注册后将覆盖同端口上旧版回调。
+ */
+drv_uart_status_t drv_uart_register_rx_callback(UART_HandleTypeDef *huart,
+                                                drv_uart_rx_callback_ex_t callback,
+                                                void *user_ctx);
+
+/**
+ * @brief 注销接收回调（同时清除新旧回调槽位）。
+ */
+drv_uart_status_t drv_uart_unregister_rx_callback(UART_HandleTypeDef *huart);
+
+/**
+ * @brief 注册旧版接收回调（兼容保留）。
+ * @details
+ * 注册后将覆盖同端口上的新版回调。
  */
 bool drv_uart_register_callback(UART_HandleTypeDef *huart, drv_uart_rx_callback_t callback);
 
 #endif /* FINAL_GRADUATE_WORK_DRV_UART_H */
+

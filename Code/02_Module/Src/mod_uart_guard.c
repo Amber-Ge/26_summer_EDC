@@ -1,19 +1,18 @@
 ﻿/**
  * @file    mod_uart_guard.c
- * @brief   UART 仲裁模块实现。
+ * @author  姜凯中
+ * @version v1.00
+ * @date    2026-03-24
+ * @brief   UART 资源仲裁实现。
  * @details
- * 1. 文件作用：实现 UART 归属权申请、释放、查询与冲突保护。
- * 2. 解耦边界：只处理资源仲裁，不参与任何协议收发和任务调度逻辑。
- * 3. 上层绑定：VOFA/K230/Stepper 等通信模块在 bind/unbind 阶段调用本模块。
- * 4. 下层依赖：以 UART 句柄实例作为唯一资源标识，不依赖 HAL 中断路径。
+ * 1. 文件作用：实现 UART 归属申请、释放、查询，以及 owner+claimant 的引用计数管理。
+ * 2. 解耦边界：只负责资源仲裁，不参与具体收发和协议逻辑。
+ * 3. 并发策略：通过关中断临界区保证资源表读写一致性。
  */
+
 #include "mod_uart_guard.h"
-#include <stdint.h>
 
-#define MOD_UART_GUARD_UART_COUNT (6U) // 支持仲裁的 UART 实例数量
-
-// UART 拥有者状态表，索引与 UART 实例固定映射
-static mod_uart_owner_e s_uart_owner[MOD_UART_GUARD_UART_COUNT] =
+static mod_uart_owner_e s_uart_owner[DRV_UART_PORT_COUNT] =
 {
     MOD_UART_OWNER_NONE,
     MOD_UART_OWNER_NONE,
@@ -23,123 +22,142 @@ static mod_uart_owner_e s_uart_owner[MOD_UART_GUARD_UART_COUNT] =
     MOD_UART_OWNER_NONE
 };
 
-/**
- * @brief 将 UART 外设实例映射为资源表索引。
- * @param instance UART 硬件实例指针。
- * @return int8_t 成功返回 [0,5]，失败返回 -1。
- */
-static int8_t _get_uart_index(USART_TypeDef *instance)
+static uint8_t s_uart_claim_depth[DRV_UART_PORT_COUNT] =
 {
-    int8_t idx = -1; // 映射结果索引
+    0U, 0U, 0U, 0U, 0U, 0U
+};
 
-    //1. 根据 UART 实例地址执行固定映射
-    switch ((uint32_t)instance)
-    {
-    case (uint32_t)USART1: idx = 0; break;
-    case (uint32_t)USART2: idx = 1; break;
-    case (uint32_t)USART3: idx = 2; break;
-    case (uint32_t)UART4:  idx = 3; break;
-    case (uint32_t)UART5:  idx = 4; break;
-    case (uint32_t)USART6: idx = 5; break;
-    default:               idx = -1; break;
-    }
-
-    return idx;
-}
+static const void *s_uart_claimant[DRV_UART_PORT_COUNT] =
+{
+    NULL, NULL, NULL, NULL, NULL, NULL
+};
 
 /**
  * @brief 进入临界区（关中断）。
- * @return uint32_t 进入前 PRIMASK 状态。
  */
 static uint32_t _critical_enter(void)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
-    uint32_t primask = __get_PRIMASK(); // 保存进入前中断屏蔽状态
+    uint32_t primask = __get_PRIMASK();
     __disable_irq();
     return primask;
 }
 
 /**
  * @brief 退出临界区（恢复中断状态）。
- * @param primask 进入临界区前保存的 PRIMASK。
  */
 static void _critical_exit(uint32_t primask)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     __set_PRIMASK(primask);
 }
 
 /**
- * @brief 执行模块层设备控制与状态管理。
- * @param huart 函数输入参数，语义由调用场景决定。
- * @param owner 函数输入参数，语义由调用场景决定。
- * @return 布尔结果，`true` 表示满足条件。
+ * @brief 解析 UART 端口索引。
  */
+static int8_t _resolve_uart_index(UART_HandleTypeDef *huart)
+{
+    if ((huart == NULL) || (huart->Instance == NULL))
+    {
+        return -1;
+    }
+
+    return drv_uart_get_port_index(huart->Instance);
+}
+
 bool mod_uart_guard_claim(UART_HandleTypeDef *huart, mod_uart_owner_e owner)
 {
-    bool result = false; // 申请结果
-    int8_t idx; // UART 映射索引
-    uint32_t primask; // 临界区状态保存值
+    const void *compat_claimant;
 
-    //1. 参数校验：句柄不能为空，拥有者不能为 NONE
-    if ((huart == NULL) || (owner == MOD_UART_OWNER_NONE))
+    if (owner == MOD_UART_OWNER_NONE)
     {
         return false;
     }
 
-    //2. 解析 UART 对应索引
-    idx = _get_uart_index(huart->Instance);
-    if (idx < 0)
-    {
-        return false;
-    }
-
-    //3. 进入临界区，避免并发访问资源表
-    primask = _critical_enter();
-
-    //4. 若当前无拥有者或已被同一拥有者占用，则申请成功
-    if ((s_uart_owner[(uint8_t)idx] == MOD_UART_OWNER_NONE) ||
-        (s_uart_owner[(uint8_t)idx] == owner))
-    {
-        s_uart_owner[(uint8_t)idx] = owner;
-        result = true;
-    }
-
-    _critical_exit(primask);
-    return result;
+    /* 兼容模式：旧接口按 owner 维度重入，claimant 使用 owner 哨兵值。 */
+    compat_claimant = (const void *)(uintptr_t)owner;
+    return mod_uart_guard_claim_ctx(huart, owner, compat_claimant);
 }
 
-/**
- * @brief 执行模块层设备控制与状态管理。
- * @param huart 函数输入参数，语义由调用场景决定。
- * @param owner 函数输入参数，语义由调用场景决定。
- * @return 布尔结果，`true` 表示满足条件。
- */
 bool mod_uart_guard_release(UART_HandleTypeDef *huart, mod_uart_owner_e owner)
 {
-    bool result = false; // 释放结果
-    int8_t idx; // UART 映射索引
-    uint32_t primask; // 临界区状态保存值
+    const void *compat_claimant;
 
-    //1. 参数校验：句柄不能为空，拥有者不能为 NONE
-    if ((huart == NULL) || (owner == MOD_UART_OWNER_NONE))
+    if (owner == MOD_UART_OWNER_NONE)
     {
         return false;
     }
 
-    //2. 解析 UART 对应索引
-    idx = _get_uart_index(huart->Instance);
+    compat_claimant = (const void *)(uintptr_t)owner;
+    return mod_uart_guard_release_ctx(huart, owner, compat_claimant);
+}
+
+bool mod_uart_guard_claim_ctx(UART_HandleTypeDef *huart, mod_uart_owner_e owner, const void *claimant)
+{
+    int8_t idx;
+    uint32_t primask;
+    bool result = false;
+
+    if ((owner == MOD_UART_OWNER_NONE) || (claimant == NULL))
+    {
+        return false;
+    }
+
+    idx = _resolve_uart_index(huart);
     if (idx < 0)
     {
         return false;
     }
 
-    //3. 进入临界区，仅允许当前拥有者释放
     primask = _critical_enter();
 
-    if (s_uart_owner[(uint8_t)idx] == owner)
+    if (s_uart_owner[(uint8_t)idx] == MOD_UART_OWNER_NONE)
     {
-        s_uart_owner[(uint8_t)idx] = MOD_UART_OWNER_NONE;
+        s_uart_owner[(uint8_t)idx] = owner;
+        s_uart_claimant[(uint8_t)idx] = claimant;
+        s_uart_claim_depth[(uint8_t)idx] = 1U;
+        result = true;
+    }
+    else if ((s_uart_owner[(uint8_t)idx] == owner) && (s_uart_claimant[(uint8_t)idx] == claimant))
+    {
+        if (s_uart_claim_depth[(uint8_t)idx] < 255U)
+        {
+            s_uart_claim_depth[(uint8_t)idx]++;
+            result = true;
+        }
+    }
+
+    _critical_exit(primask);
+    return result;
+}
+
+bool mod_uart_guard_release_ctx(UART_HandleTypeDef *huart, mod_uart_owner_e owner, const void *claimant)
+{
+    int8_t idx;
+    uint32_t primask;
+    bool result = false;
+
+    if ((owner == MOD_UART_OWNER_NONE) || (claimant == NULL))
+    {
+        return false;
+    }
+
+    idx = _resolve_uart_index(huart);
+    if (idx < 0)
+    {
+        return false;
+    }
+
+    primask = _critical_enter();
+
+    if ((s_uart_owner[(uint8_t)idx] == owner) &&
+        (s_uart_claimant[(uint8_t)idx] == claimant) &&
+        (s_uart_claim_depth[(uint8_t)idx] > 0U))
+    {
+        s_uart_claim_depth[(uint8_t)idx]--;
+        if (s_uart_claim_depth[(uint8_t)idx] == 0U)
+        {
+            s_uart_owner[(uint8_t)idx] = MOD_UART_OWNER_NONE;
+            s_uart_claimant[(uint8_t)idx] = NULL;
+        }
         result = true;
     }
 
@@ -147,34 +165,60 @@ bool mod_uart_guard_release(UART_HandleTypeDef *huart, mod_uart_owner_e owner)
     return result;
 }
 
-/**
- * @brief 执行模块层设备控制与状态管理。
- * @param huart 函数输入参数，语义由调用场景决定。
- * @return 返回函数执行结果。
- */
 mod_uart_owner_e mod_uart_guard_get_owner(UART_HandleTypeDef *huart)
 {
-    int8_t idx; // UART 映射索引
-    mod_uart_owner_e owner = MOD_UART_OWNER_NONE; // 当前拥有者返回值
-    uint32_t primask; // 临界区状态保存值
+    int8_t idx;
+    uint32_t primask;
+    mod_uart_owner_e owner = MOD_UART_OWNER_NONE;
 
-    //1. 参数校验
-    if (huart == NULL)
-    {
-        return MOD_UART_OWNER_NONE;
-    }
-
-    //2. 解析 UART 对应索引
-    idx = _get_uart_index(huart->Instance);
+    idx = _resolve_uart_index(huart);
     if (idx < 0)
     {
         return MOD_UART_OWNER_NONE;
     }
 
-    //3. 在临界区读取拥有者状态，保证读取一致性
     primask = _critical_enter();
     owner = s_uart_owner[(uint8_t)idx];
     _critical_exit(primask);
+
     return owner;
+}
+
+uint8_t mod_uart_guard_get_claim_depth(UART_HandleTypeDef *huart)
+{
+    int8_t idx;
+    uint32_t primask;
+    uint8_t depth = 0U;
+
+    idx = _resolve_uart_index(huart);
+    if (idx < 0)
+    {
+        return 0U;
+    }
+
+    primask = _critical_enter();
+    depth = s_uart_claim_depth[(uint8_t)idx];
+    _critical_exit(primask);
+
+    return depth;
+}
+
+const void *mod_uart_guard_get_claimant(UART_HandleTypeDef *huart)
+{
+    int8_t idx;
+    uint32_t primask;
+    const void *claimant = NULL;
+
+    idx = _resolve_uart_index(huart);
+    if (idx < 0)
+    {
+        return NULL;
+    }
+
+    primask = _critical_enter();
+    claimant = s_uart_claimant[(uint8_t)idx];
+    _critical_exit(primask);
+
+    return claimant;
 }
 

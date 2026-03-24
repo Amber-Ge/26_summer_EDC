@@ -40,9 +40,7 @@ Driver 层不负责：
 | `drv_key` | 按键时序状态机（消抖/单击/双击/长按） | `mod_key` |
 | `drv_pwm` | PWM ctx 生命周期与占空比控制 | `mod_motor` |
 | `drv_encoder` | 编码器 ctx 生命周期与增量读取 | `mod_motor` |
-| `drv_uart` | 串口阻塞/DMA 收发与回调分发 | `mod_vofa/mod_k230/mod_stepper` |
-
-> 本轮精修重点为非 UART 驱动（gpio/adc/key/pwm/encoder）。
+| `drv_uart` | 串口阻塞/DMA 收发、RX 事件分发、端口索引映射 | `mod_vofa/mod_k230/mod_stepper` |
 
 ---
 
@@ -146,6 +144,28 @@ Driver 层不负责：
 1. “读后清零”语义不可破坏。
 2. 若新增绝对值读取，必须新增接口，不能改现有接口语义。
 
+### 4.6 `drv_uart`
+
+职责：
+
+1. 提供统一端口索引映射 `drv_uart_get_port_index`，避免模块层重复维护 UART 映射表。
+2. 提供 DMA 发送/接收状态码接口（`*_ex`）和兼容 `bool` 接口。
+3. 提供带 `user_ctx` 的 RX 回调注册接口，实现协议层“同构绑定”。
+4. 提供 RX 事件类型（IDLE/TC/HT）与 HT 中断关闭接口，减少模块层 HAL 细节耦合。
+
+解耦点：
+
+1. 驱动只分发“字节 + 事件 + user_ctx”，不做协议帧解析。
+2. 协议层可独立决定是否忽略 HT 事件、何时重启 DMA。
+3. 同一套驱动接口同时支撑 VOFA/K230/Stepper，不区分业务角色。
+
+维护要点：
+
+1. 端口索引映射必须与板级实际启用 UART 保持一致。
+2. `HAL_UARTEx_RxEventCallback` 只能做事件分发，不可写入协议语义。
+3. 变更 `drv_uart_status_t` 错误码语义时，必须同步核对所有模块层重试/回滚路径。
+4. 旧 `bool` 接口仅用于兼容，新增能力优先使用 `*_ex` 状态码接口。
+
 ---
 
 ## 5. 与 Module 层接口契约
@@ -180,3 +200,4 @@ Driver 层不负责：
 1. 建立 Driver 层单文档详解。
 2. 完成非 UART 驱动的生命周期契约与解耦边界说明。
 3. 增补 `drv_pwm/drv_encoder` 的数据契约和维护规则。
+4. 补充 `drv_uart` 统一回调模型（user_ctx + RX 事件）与状态码接口规范。

@@ -37,7 +37,7 @@ Module 层不负责：
 
 1. `*_get_default_ctx`
 2. `*_ctx_init`
-3. `*_ctx_deinit`
+3. `*_ctx_deinit`（若模块提供）
 4. `*_bind`
 5. `*_unbind`
 6. `*_is_bound`
@@ -66,8 +66,6 @@ Module 层不负责：
 | `mod_k230` | K230 帧接收解析 | `drv_uart` |
 | `mod_stepper` | 步进协议封装 | `drv_uart` |
 | `mod_uart_guard` | 串口发送仲裁 | UART 相关模块 |
-
-> 本轮精修重点为非 UART 模块（motor/led/relay/sensor/key/battery/oled）。
 
 ---
 
@@ -140,6 +138,36 @@ Module 层不负责：
 2. I2C 句柄通过 `OLED_BindI2C` 注入，不写死总线实例。
 3. 字模资源与渲染逻辑分离（`mod_oled_data`）。
 
+### 4.7 UART 协议模块组（`mod_vofa/mod_k230/mod_stepper/mod_uart_guard`）
+
+统一架构目标：
+
+1. 协议层只做协议语义；UART 细节统一下沉到 `drv_uart`。
+2. 每个协议上下文通过 `bind_t.huart` 绑定一个串口。
+3. 通过 `mod_uart_guard` 统一仲裁串口归属，防止跨模块抢占冲突。
+4. 发送互斥统一采用 `bind_t.tx_mutex` 注入，避免任务层散落锁逻辑。
+
+关键调用链：
+
+1. `ctx_bind -> mod_uart_guard_claim_ctx(owner+ctx) -> drv_uart_register_rx_callback(user_ctx) -> drv_uart_receive_dma_start_ex`。
+2. RX 回调内按事件类型处理（例如 K230/VOFA 忽略 HT），必要时重启 DMA。
+3. `ctx_unbind -> drv_uart_receive_dma_stop_ex -> drv_uart_unregister_rx_callback -> mod_uart_guard_release_ctx(owner+ctx)`。
+4. `mod_uart_guard` 通过 `owner + claimant(ctx)` 统一拦截“同 owner 不同实例”的占用冲突。
+
+`mod_uart_guard` 约束：
+
+1. 同 owner 重复 claim 会累加 claim-depth。
+2. `claim_ctx` 仅允许“同 owner + 同 claimant(ctx)”重入 claim。
+3. `release_ctx` 仅在 owner 与 claimant 都匹配时生效。
+4. depth 归零才真正释放 owner/claimant。
+5. 该机制保证“重复绑定/重复初始化”场景不会误释放他人占用。
+
+维护要点：
+
+1. UART 协议模块禁止直接调用 HAL UART/HAL DMA；必须通过 `drv_uart`。
+2. 新增 UART 协议模块时，必须接入 `mod_uart_guard` 和 `tx_mutex` 约束。
+3. 协议层回调函数首选 `user_ctx` 模型，避免全局单例指针分发。
+
 ---
 
 ## 5. 调用链示例
@@ -189,3 +217,4 @@ Module 层不负责：
 1. 建立 Module 层单文档详解。
 2. 按 ctx 架构统一生命周期描述。
 3. 增补 `mod_motor` 数据所有权、生命周期契约、错误降级与扩展指南。
+4. 增补 UART 协议模块统一绑定模型（driver 回调 + guard 仲裁 + 发送互斥）。
