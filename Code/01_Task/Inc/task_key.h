@@ -1,11 +1,13 @@
 ﻿/**
  * @file    task_key.h
+ * @author  姜凯中
+ * @version v1.00
+ * @date    2026-03-24
  * @brief   按键任务接口声明。
  * @details
- * 1. 文件作用：定义按键任务入口与扫描节拍参数，作为输入事件源向其他任务分发控制信号。
- * 2. 上层绑定：由 RTOS 创建并周期调度；输出信号量由 DCC/GPIO 任务消费。
- * 3. 下层依赖：`mod_key` 提供去抖后的按键事件枚举。
- * 4. 生命周期：任务常驻，持续执行“扫描 -> 事件映射 -> 信号量释放”流程。
+ * 1. KeyTask 是系统输入事件源，负责扫描按键并分发控制信号。
+ * 2. 任务事件读取来自 mod_key，业务动作通过信号量解耦到 DccTask/GpioTask。
+ * 3. Task 层不直接解析 GPIO 电平，所有去抖和手势识别由模块层完成。
  */
 #ifndef FINAL_GRADUATE_WORK_TASK_KEY_H
 #define FINAL_GRADUATE_WORK_TASK_KEY_H
@@ -13,12 +15,19 @@
 #include "cmsis_os.h"
 #include "mod_key.h"
 
+/* 按键扫描周期（毫秒），复用模块层统一扫描周期配置 */
 #define TASK_KEY_PERIOD_MS (MOD_KEY_SCAN_PERIOD_MS)
+/* Key 任务启动开关：1=正常运行，0=启动后挂起 */
+#define TASK_KEY_STARTUP_ENABLE (1U)
 
+/* 任意按键事件反馈信号量：由 KeyTask 释放，GpioTask 消费 */
+extern osSemaphoreId_t Sem_RedLEDHandle;
+
+/**
+ * @brief KeyTask 入口函数。
+ * @param argument RTOS 任务参数（当前未使用）。
+ */
 void StartKeyTask(void *argument);
-
-/* 任意按键事件反馈信号量（由 KeyTask 释放，GpioTask 用于黄灯短闪） */
-extern osSemaphoreId_t Sem_RedLEDHandle; // RTOS 信号量句柄，用于任务同步。
 
 #endif /* FINAL_GRADUATE_WORK_TASK_KEY_H */
 

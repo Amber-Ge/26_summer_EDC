@@ -1,66 +1,69 @@
 ﻿/**
  * @file    mod_led.c
- * @brief   LED 模块实现。
+ * @author  姜凯中
+ * @version v1.00
+ * @date    2026-03-24
+ * @brief   LED 模块实现（ctx 架构）。
  * @details
- * 1. 文件作用：实现 LED 绑定表管理、边界检查和灯态控制执行。
- * 2. 解耦边界：本文件不承载闪烁节拍策略，仅执行“给定逻辑 ID 的灯态动作”。
- * 3. 上层绑定：`GpioTask` 等任务按业务状态机调用开关/翻转接口。
- * 4. 下层依赖：`drv_gpio` 完成电平写入，具体端口和有效电平由绑定表提供。
+ * 1. 文件作用：实现 LED 映射绑定、上下文生命周期与通道控制逻辑。
+ * 2. 解耦边界：任务层仅使用语义接口，不直接访问 GPIO 端口。
+ * 3. 下层依赖：通过 `drv_gpio` 执行原子引脚操作。
  */
+
 #include "mod_led.h"
 
 #include <string.h>
 
-/* 当前生效的LED映射表 */
-static mod_led_hw_cfg_t s_led_cfg_active[LED_MAX]; // LED 硬件映射表的运行态副本。
-/* LED模块绑定状态 */
-static bool s_led_cfg_bound = false; // 上下文或配置变量
+static mod_led_ctx_t s_default_ctx; // s_default_ctx：模块默认上下文实例。
 
 /**
- * @brief 校验LED ID是否合法
+ * @brief 校验 LED 通道 ID。
+ * @param led LED 通道枚举值。
+ * @return true 合法。
+ * @return false 非法。
  */
-/**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param led 函数输入参数，语义由调用场景决定。
- * @return 布尔结果，`true` 表示满足条件。
- */
-static bool is_valid_led_id(mod_led_id_e led)
+static bool mod_led_is_valid_id(mod_led_id_e led)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     return ((led >= LED_RED) && (led < LED_MAX));
 }
 
 /**
- * @brief 电平取反工具函数
+ * @brief 逻辑电平取反工具。
+ * @param level 输入电平。
+ * @return gpio_level_e 反向后的电平。
  */
-/**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param level 函数输入参数，语义由调用场景决定。
- * @return 返回函数执行结果。
- */
-static gpio_level_e invert_level(gpio_level_e level)
+static gpio_level_e mod_led_invert_level(gpio_level_e level)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     return (level == GPIO_LEVEL_LOW) ? GPIO_LEVEL_HIGH : GPIO_LEVEL_LOW;
 }
 
 /**
- * @brief 校验单个LED映射项
+ * @brief 判断上下文是否可运行。
+ * @param ctx 上下文指针。
+ * @return true 已初始化并绑定。
+ * @return false 未就绪。
  */
+static bool mod_led_ctx_ready(const mod_led_ctx_t *ctx)
+{
+    return ((ctx != NULL) && ctx->inited && ctx->bound);
+}
+
 /**
- * @brief 执行模块层设备控制与状态管理。
- * @param item 函数输入参数，语义由调用场景决定。
- * @return 布尔结果，`true` 表示满足条件。
+ * @brief 校验单个 LED 映射项。
+ * @param item 映射项指针。
+ * @return true 合法。
+ * @return false 非法。
  */
 static bool mod_led_check_item(const mod_led_hw_cfg_t *item)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
-    if (item == NULL)
+    // 步骤1：端口句柄必须有效。
+    if ((item == NULL) || (item->port == NULL))
     {
         return false;
     }
 
-    if (item->port == NULL)
+    // 步骤2：有效电平必须在枚举定义范围内。
+    if ((item->active_level != GPIO_LEVEL_LOW) && (item->active_level != GPIO_LEVEL_HIGH))
     {
         return false;
     }
@@ -68,140 +71,143 @@ static bool mod_led_check_item(const mod_led_hw_cfg_t *item)
     return true;
 }
 
-/**
- * @brief 执行模块层设备控制与状态管理。
- * @param map 函数输入参数，语义由调用场景决定。
- * @param map_num 数据长度或数量参数。
- * @return 布尔结果，`true` 表示满足条件。
- */
-bool mod_led_bind_map(const mod_led_hw_cfg_t *map, uint8_t map_num)
+mod_led_ctx_t *mod_led_get_default_ctx(void)
 {
-    // 1. 基础参数校验。
-    if ((map == NULL) || (map_num != LED_MAX))
+    return &s_default_ctx;
+}
+
+bool mod_led_ctx_init(mod_led_ctx_t *ctx, const mod_led_bind_t *bind)
+{
+    // 步骤1：参数校验。
+    if (ctx == NULL)
     {
         return false;
     }
 
-    // 2. 逐项校验映射内容。
-    for (uint8_t i = 0U; i < LED_MAX; i++) // 循环计数器
+    // 步骤2：清空历史状态并设置初始化标志。
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->inited = true;
+
+    // 步骤3：支持“初始化即绑定”。
+    if (bind != NULL)
     {
-        if (!mod_led_check_item(&map[i]))
+        return mod_led_bind(ctx, bind);
+    }
+
+    return true;
+}
+
+void mod_led_ctx_deinit(mod_led_ctx_t *ctx)
+{
+    // 步骤1：空指针保护。
+    if (ctx == NULL)
+    {
+        return;
+    }
+
+    // 步骤2：先解绑再清零。
+    mod_led_unbind(ctx);
+    memset(ctx, 0, sizeof(*ctx));
+}
+
+bool mod_led_bind(mod_led_ctx_t *ctx, const mod_led_bind_t *bind)
+{
+    // 步骤1：参数与状态校验。
+    if ((ctx == NULL) || (!ctx->inited) || (bind == NULL) || (bind->map == NULL) || (bind->map_num != LED_MAX))
+    {
+        return false;
+    }
+
+    // 步骤2：逐项校验映射合法性。
+    for (uint8_t i = 0U; i < LED_MAX; i++)
+    {
+        if (!mod_led_check_item(&bind->map[i]))
         {
             return false;
         }
     }
 
-    // 3. 保存映射并标记绑定成功。
-    memcpy(s_led_cfg_active, map, sizeof(s_led_cfg_active));
-    s_led_cfg_bound = true;
+    // 步骤3：保存映射副本并标记绑定完成。
+    memcpy(ctx->map, bind->map, sizeof(ctx->map));
+    ctx->bound = true;
 
     return true;
 }
 
-/**
- * @brief 执行模块层设备控制与状态管理。
- * @param 无。
- * @return 无。
- */
-void mod_led_unbind_map(void)
+void mod_led_unbind(mod_led_ctx_t *ctx)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
-    s_led_cfg_bound = false;
-}
-
-/**
- * @brief 执行模块层设备控制与状态管理。
- * @param 无。
- * @return 布尔结果，`true` 表示满足条件。
- */
-bool mod_led_is_bound(void)
-{
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
-    return s_led_cfg_bound;
-}
-
-/**
- * @brief 执行模块层设备控制与状态管理。
- * @param 无。
- * @return 无。
- */
-void mod_led_Init(void)
-{
-    // 1. 未绑定时直接返回，避免错误访问GPIO资源。
-    if (!mod_led_is_bound())
+    // 步骤1：仅对已初始化上下文执行解绑。
+    if ((ctx == NULL) || (!ctx->inited))
     {
         return;
     }
 
-    // 2. 初始化时关闭全部LED，保证上电状态可控。
-    for (uint8_t i = 0U; i < LED_MAX; i++) // 循环计数器
-    {
-        mod_led_off((mod_led_id_e)i);
-    }
+    // 步骤2：清空映射并复位绑定标志。
+    memset(ctx->map, 0, sizeof(ctx->map));
+    ctx->bound = false;
 }
 
-/**
- * @brief 执行模块层设备控制与状态管理。
- * @param led 函数输入参数，语义由调用场景决定。
- * @return 无。
- */
-void mod_led_on(mod_led_id_e led)
+bool mod_led_is_bound(const mod_led_ctx_t *ctx)
 {
-    const mod_led_hw_cfg_t *cfg; // 模块变量，用于保存运行时状态。
+    return mod_led_ctx_ready(ctx);
+}
 
-    // 1. 参数和绑定状态检查。
-    if (!is_valid_led_id(led) || !mod_led_is_bound())
+void mod_led_init(mod_led_ctx_t *ctx)
+{
+    // 步骤1：就绪检查。
+    if (!mod_led_ctx_ready(ctx))
     {
         return;
     }
 
-    // 2. 取出映射配置。
-    cfg = &s_led_cfg_active[led];
+    // 步骤2：上电统一熄灭全部 LED，建立安全初始态。
+    for (uint8_t i = 0U; i < LED_MAX; i++)
+    {
+        mod_led_off(ctx, (mod_led_id_e)i);
+    }
+}
 
-    // 3. 输出有效电平，点亮LED。
+void mod_led_on(mod_led_ctx_t *ctx, mod_led_id_e led)
+{
+    const mod_led_hw_cfg_t *cfg = NULL; // cfg：当前通道硬件映射。
+
+    // 步骤1：上下文和通道校验。
+    if (!mod_led_ctx_ready(ctx) || (!mod_led_is_valid_id(led)))
+    {
+        return;
+    }
+
+    // 步骤2：按 active_level 点亮通道。
+    cfg = &ctx->map[(uint8_t)led];
     drv_gpio_write(cfg->port, cfg->pin, cfg->active_level);
 }
 
-/**
- * @brief 执行模块层设备控制与状态管理。
- * @param led 函数输入参数，语义由调用场景决定。
- * @return 无。
- */
-void mod_led_off(mod_led_id_e led)
+void mod_led_off(mod_led_ctx_t *ctx, mod_led_id_e led)
 {
-    const mod_led_hw_cfg_t *cfg; // 模块变量，用于保存运行时状态。
+    const mod_led_hw_cfg_t *cfg = NULL; // cfg：当前通道硬件映射。
 
-    // 1. 参数和绑定状态检查。
-    if (!is_valid_led_id(led) || !mod_led_is_bound())
+    // 步骤1：上下文和通道校验。
+    if (!mod_led_ctx_ready(ctx) || (!mod_led_is_valid_id(led)))
     {
         return;
     }
 
-    // 2. 取出映射配置。
-    cfg = &s_led_cfg_active[led];
-
-    // 3. 输出反相电平，熄灭LED。
-    drv_gpio_write(cfg->port, cfg->pin, invert_level(cfg->active_level));
+    // 步骤2：写入 active_level 反相电平实现熄灭。
+    cfg = &ctx->map[(uint8_t)led];
+    drv_gpio_write(cfg->port, cfg->pin, mod_led_invert_level(cfg->active_level));
 }
 
-/**
- * @brief 执行模块层设备控制与状态管理。
- * @param led 函数输入参数，语义由调用场景决定。
- * @return 无。
- */
-void mod_led_toggle(mod_led_id_e led)
+void mod_led_toggle(mod_led_ctx_t *ctx, mod_led_id_e led)
 {
-    const mod_led_hw_cfg_t *cfg; // 模块变量，用于保存运行时状态。
+    const mod_led_hw_cfg_t *cfg = NULL; // cfg：当前通道硬件映射。
 
-    // 1. 参数和绑定状态检查。
-    if (!is_valid_led_id(led) || !mod_led_is_bound())
+    // 步骤1：上下文和通道校验。
+    if (!mod_led_ctx_ready(ctx) || (!mod_led_is_valid_id(led)))
     {
         return;
     }
 
-    // 2. 取出映射配置。
-    cfg = &s_led_cfg_active[led];
-
-    // 3. 翻转当前电平。
+    // 步骤2：直接翻转引脚输出状态。
+    cfg = &ctx->map[(uint8_t)led];
     drv_gpio_toggle(cfg->port, cfg->pin);
 }

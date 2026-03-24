@@ -1,5 +1,8 @@
 ﻿/**
  * @file    mod_oled.c
+ * @author  姜凯中
+ * @version v1.00
+ * @date    2026-03-24
  * @brief   OLED 显示模块实现。
  * @details
  * 1. 文件作用：实现 OLED 显存缓存、字符/图元绘制和 I2C 刷新发送。
@@ -9,9 +12,8 @@
  */
 #include "mod_oled.h"
 
+
 #include <math.h>
-#include <stdarg.h>
-#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -35,7 +37,7 @@ static uint32_t s_oled_i2c_timeout_ms = 0U; // OLED I2C 超时时间
 static bool s_oled_i2c_bound = false; // OLED I2C 绑定状态
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
+ * @brief 等待 I2C 外设进入可发送状态。
  * @param timeout_ms 超时或时基参数。
  * @return HAL 状态码，`HAL_OK` 表示成功。
  */
@@ -43,13 +45,13 @@ static HAL_StatusTypeDef OLED_I2C_WaitReady(uint32_t timeout_ms)
 {
     uint32_t tick_start = HAL_GetTick(); // 等待起始 tick
 
-    //1. 参数校验：必须先有有效I2C绑定
+    // 1. 参数校验：必须先有有效I2C绑定
     if (!OLED_IsBoundI2C())
     {
         return HAL_ERROR;
     }
 
-    //1. 轮询 I2C 状态直到就绪或超时
+    // 1. 轮询 I2C 状态直到就绪或超时
     while (HAL_I2C_GetState(s_oled_hi2c) != HAL_I2C_STATE_READY)
     {
         if ((HAL_GetTick() - tick_start) >= timeout_ms)
@@ -62,9 +64,9 @@ static HAL_StatusTypeDef OLED_I2C_WaitReady(uint32_t timeout_ms)
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param frame 函数输入参数，语义由调用场景决定。
- * @param len 数据长度或数量参数。
+ * @brief 以中断方式发送一帧 OLED I2C 数据并等待完成。
+ * @param frame 待发送的数据帧指针。
+ * @param len 数据帧长度（字节）。
  * @return HAL 状态码，`HAL_OK` 表示成功。
  */
 static HAL_StatusTypeDef OLED_I2C_TransmitFrame(const uint8_t *frame, uint16_t len)
@@ -72,26 +74,26 @@ static HAL_StatusTypeDef OLED_I2C_TransmitFrame(const uint8_t *frame, uint16_t l
     HAL_StatusTypeDef status; // I2C 接口状态
     uint32_t tick_start; // 发送等待起始 tick
 
-    //1. 参数校验：数据帧必须有效，长度必须大于0
+    // 1. 参数校验：数据帧必须有效，长度必须大于0
     if ((frame == NULL) || (len == 0U))
     {
         return HAL_ERROR;
     }
 
-    //2. 参数校验：必须先完成I2C绑定
+    // 2. 参数校验：必须先完成I2C绑定
     if (!s_oled_i2c_bound)
     {
         return HAL_ERROR;
     }
 
-    //3. 等待 I2C 外设空闲
+    // 3. 等待 I2C 外设空闲
     status = OLED_I2C_WaitReady(s_oled_i2c_timeout_ms);
     if (status != HAL_OK)
     {
         return status;
     }
 
-    //4. 清除发送完成/错误标志并启动中断发送
+    // 4. 清除发送完成/错误标志并启动中断发送
     s_oled_tx_done = 0U;
     s_oled_tx_error = 0U;
 
@@ -102,7 +104,7 @@ static HAL_StatusTypeDef OLED_I2C_TransmitFrame(const uint8_t *frame, uint16_t l
         return status;
     }
 
-    //5. 等待发送完成标志
+    // 5. 等待发送完成标志
     tick_start = HAL_GetTick();
     while (s_oled_tx_done == 0U)
     {
@@ -112,7 +114,7 @@ static HAL_StatusTypeDef OLED_I2C_TransmitFrame(const uint8_t *frame, uint16_t l
         }
     }
 
-    //6. 发送完成后检查错误标志
+    // 6. 发送完成后检查错误标志
     if (s_oled_tx_error != 0U)
     {
         return HAL_ERROR;
@@ -122,13 +124,13 @@ static HAL_StatusTypeDef OLED_I2C_TransmitFrame(const uint8_t *frame, uint16_t l
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param hi2c 函数输入参数，语义由调用场景决定。
+ * @brief OLED I2C 发送完成回调。
+ * @param hi2c I2C 句柄指针。
  * @return 无。
  */
 void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
 {
-    //1. OLED 对应 I2C 完成回调：置发送完成标志
+    // 1. OLED 对应 I2C 完成回调：置发送完成标志
     if (OLED_IsBoundI2C() && (hi2c == s_oled_hi2c))
     {
         s_oled_tx_done = 1U;
@@ -136,13 +138,13 @@ void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param hi2c 函数输入参数，语义由调用场景决定。
+ * @brief OLED I2C 发送错误回调。
+ * @param hi2c I2C 句柄指针。
  * @return 无。
  */
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 {
-    //1. OLED 对应 I2C 错误回调：置错误与完成标志
+    // 1. OLED 对应 I2C 错误回调：置错误与完成标志
     if (OLED_IsBoundI2C() && (hi2c == s_oled_hi2c))
     {
         s_oled_tx_error = 1U;
@@ -151,71 +153,71 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param command 函数输入参数，语义由调用场景决定。
+ * @brief 向 OLED 发送单字节命令。
+ * @param command OLED 命令字节。
  * @return 无。
  */
 static void OLED_WriteCommand(uint8_t command)
 {
     uint8_t frame[2]; // 指令帧：控制字节 + 指令
 
-    //1. 组装指令帧并发送
+    // 1. 组装指令帧并发送
     frame[0] = 0x00U;
     frame[1] = command;
     (void)OLED_I2C_TransmitFrame(frame, (uint16_t)sizeof(frame));
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
+ * @brief 向 OLED 连续发送数据字节。
  * @param data 输入/输出缓冲区指针。
- * @param count 数据长度或数量参数。
+ * @param count 待发送数据字节数。
  * @return 无。
  */
 static void OLED_WriteData(const uint8_t *data, uint8_t count)
 {
-    //1. 参数校验
+    // 1. 参数校验
     if ((data == NULL) || (count == 0U))
     {
         return;
     }
 
-    //2. 长度限幅
+    // 2. 长度限幅
     if (count > OLED_WIDTH)
     {
         count = OLED_WIDTH;
     }
 
-    //3. 组装数据帧（控制字节 0x40）并发送
+    // 3. 组装数据帧（控制字节 0x40）并发送
     s_oled_tx_frame[0] = 0x40U;
     memcpy(&s_oled_tx_frame[1], data, count);
     (void)OLED_I2C_TransmitFrame(s_oled_tx_frame, (uint16_t)count + 1U);
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param page 函数输入参数，语义由调用场景决定。
- * @param x 函数输入参数，语义由调用场景决定。
+ * @brief 设置 OLED 页地址与列地址。
+ * @param page 页地址（0~7）。
+ * @param X X 坐标（像素）。
  * @return 无。
  */
 static void OLED_SetCursor(uint8_t page, uint8_t x)
 {
-    //1. 设置页地址与列地址
+    // 1. 设置页地址与列地址
     OLED_WriteCommand((uint8_t)(0xB0U | (page & 0x07U)));
     OLED_WriteCommand((uint8_t)(0x10U | ((x & 0xF0U) >> 4U)));
     OLED_WriteCommand((uint8_t)(0x00U | (x & 0x0FU)));
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param x 函数输入参数，语义由调用场景决定。
- * @param y 函数输入参数，语义由调用场景决定。
- * @return 返回计算结果或状态码，具体语义见实现。
+ * @brief 计算无符号整数幂。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @return 计算结果。
  */
 static uint32_t OLED_Pow(uint32_t x, uint32_t y)
 {
     uint32_t result = 1U; // 幂运算结果
 
-    //1. 循环乘法计算 x^y
+    // 1. 循环乘法计算 x^y
     while (y-- > 0U)
     {
         result *= x;
@@ -225,15 +227,15 @@ static uint32_t OLED_Pow(uint32_t x, uint32_t y)
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param angle 函数输入参数，语义由调用场景决定。
- * @param start_angle 函数输入参数，语义由调用场景决定。
- * @param end_angle 函数输入参数，语义由调用场景决定。
- * @return 返回计算结果或状态码，具体语义见实现。
+ * @brief 判断角度是否落在指定角度区间。
+ * @param angle 待判定角度（度）。
+ * @param start_angle 起始角度（度）。
+ * @param end_angle 结束角度（度）。
+ * @return 计算结果。
  */
 static uint8_t OLED_AngleInRange(int16_t angle, int16_t start_angle, int16_t end_angle)
 {
-    //1. 判定角度是否在给定扇形范围内（支持跨 0 度）
+    // 1. 判定角度是否在给定扇形范围内（支持跨 0 度）
     if (start_angle <= end_angle)
     {
         return (uint8_t)((angle >= start_angle) && (angle <= end_angle));
@@ -243,21 +245,33 @@ static uint8_t OLED_AngleInRange(int16_t angle, int16_t start_angle, int16_t end
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param x1 函数输入参数，语义由调用场景决定。
- * @param y1 函数输入参数，语义由调用场景决定。
- * @param x2 函数输入参数，语义由调用场景决定。
- * @param y2 函数输入参数，语义由调用场景决定。
- * @param x3 函数输入参数，语义由调用场景决定。
- * @param y3 函数输入参数，语义由调用场景决定。
- * @return 返回计算结果或状态码，具体语义见实现。
+ * @brief 计算三角形有向面积的 2 倍值。
+ * @param x1 顶点 1 X 坐标。
+ * @param y1 顶点 1 Y 坐标。
+ * @param x2 顶点 2 X 坐标。
+ * @param y2 顶点 2 Y 坐标。
+ * @param x3 顶点 3 X 坐标。
+ * @param y3 顶点 3 Y 坐标。
+ * @return 计算结果。
  */
 static int32_t OLED_TriArea2(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3)
 {
-    //1. 返回三角形有向面积的 2 倍值，用于点在三角形判定
+    // 1. 返回三角形有向面积的 2 倍值，用于点在三角形判定
     return (int32_t)(x2 - x1) * (int32_t)(y3 - y1) - (int32_t)(y2 - y1) * (int32_t)(x3 - x1);
 }
 
+/**
+ * @brief 判断点是否位于三角形内部（含边界）。
+ * @param px 待判断点 X 坐标。
+ * @param py 待判断点 Y 坐标。
+ * @param x0 顶点 0 X 坐标。
+ * @param y0 顶点 0 Y 坐标。
+ * @param x1 顶点 1 X 坐标。
+ * @param y1 顶点 1 Y 坐标。
+ * @param x2 顶点 2 X 坐标。
+ * @param y2 顶点 2 Y 坐标。
+ * @return uint8_t 在三角形内部返回 1，否则返回 0。
+ */
 static uint8_t OLED_PointInTriangle(int16_t px,
                                     int16_t py,
                                     int16_t x0,
@@ -274,66 +288,68 @@ static uint8_t OLED_PointInTriangle(int16_t px,
     uint8_t has_neg = (uint8_t)((c1 < 0) || (c2 < 0) || (c3 < 0)); // 是否存在负号
     uint8_t has_pos = (uint8_t)((c1 > 0) || (c2 > 0) || (c3 > 0)); // 是否存在正号
 
-    //1. 三个符号同号或包含零时点在三角形内
+    // 1. 三个符号同号或包含零时点在三角形内
     return (uint8_t)(!(has_neg && has_pos));
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param hi2c 函数输入参数，语义由调用场景决定。
- * @param dev_addr 函数输入参数，语义由调用场景决定。
+ * @brief 绑定 OLED 使用的 I2C 句柄和参数。
+ * @param hi2c I2C 句柄指针。
+ * @param dev_addr 设备地址（7bit 左移 1 位格式）。
  * @param timeout_ms 超时或时基参数。
- * @return 布尔结果，`true` 表示满足条件。
+ * @return true 绑定成功。
+ * @return false 参数非法。
  */
 bool OLED_BindI2C(I2C_HandleTypeDef *hi2c, uint16_t dev_addr, uint32_t timeout_ms)
 {
-    //1. 参数校验：句柄、地址、超时任一非法都判定绑定失败
+    // 1. 参数校验：句柄、地址、超时任一非法都判定绑定失败
     if ((hi2c == NULL) || (dev_addr == 0U) || (timeout_ms == 0U))
     {
         return false;
     }
 
-    //2. 保存绑定参数
+    // 2. 保存绑定参数
     s_oled_hi2c = hi2c;
     s_oled_i2c_addr = dev_addr;
     s_oled_i2c_timeout_ms = timeout_ms;
     s_oled_i2c_bound = true;
 
-    //3. 返回绑定成功
+    // 3. 返回绑定成功
     return true;
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
+ * @brief 解绑 OLED I2C 资源并复位发送状态。
  * @param 无。
  * @return 无。
  */
 void OLED_UnbindI2C(void)
 {
-    //1. 清空绑定句柄和参数
+    // 1. 清空绑定句柄和参数
     s_oled_hi2c = NULL;
     s_oled_i2c_addr = 0U;
     s_oled_i2c_timeout_ms = 0U;
     s_oled_i2c_bound = false;
 
-    //2. 复位发送状态，防止残留状态影响后续流程
+    // 2. 复位发送状态，防止残留状态影响后续流程
     s_oled_tx_done = 1U;
     s_oled_tx_error = 0U;
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
+ * @brief 查询 OLED I2C 是否已完成绑定。
  * @param 无。
- * @return 布尔结果，`true` 表示满足条件。
+ * @return true 已绑定。
+ * @return false 未绑定。
  */
 bool OLED_IsBoundI2C(void)
 {
-    //1. 句柄非空且状态标志为true，才算完成绑定
+    // 1. 句柄非空且状态标志为true，才算完成绑定
     return (bool)(s_oled_i2c_bound && (s_oled_hi2c != NULL));
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
+ * @brief 执行 SSD1306 初始化序列并清屏。
  * @param 无。
  * @return 无。
  */
@@ -359,13 +375,13 @@ void OLED_Init(void)
 
     uint32_t i; // 初始化指令索引
 
-    //1. 强制绑定检查：未绑定时不执行初始化序列
+    // 1. 强制绑定检查：未绑定时不执行初始化序列
     if (!OLED_IsBoundI2C())
     {
         return;
     }
 
-    //1. 上电等待后按序发送初始化命令
+    // 1. 上电等待后按序发送初始化命令
     HAL_Delay(10U);
 
     for (i = 0U; i < (uint32_t)sizeof(init_cmds); i++) // 循环计数器
@@ -373,13 +389,13 @@ void OLED_Init(void)
         OLED_WriteCommand(init_cmds[i]);
     }
 
-    //2. 清空显存并整屏刷新
+    // 2. 清空显存并整屏刷新
     OLED_Clear();
     OLED_Update();
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
+ * @brief 将整屏显存刷新到 OLED。
  * @param 无。
  * @return 无。
  */
@@ -387,7 +403,7 @@ void OLED_Update(void)
 {
     uint8_t page; // 页索引
 
-    //1. 遍历 8 页并把显存页写入 OLED
+    // 1. 遍历 8 页并把显存页写入 OLED
     for (page = 0U; page < OLED_PAGE_NUM; page++) // 循环计数器
     {
         OLED_SetCursor(page, 0U);
@@ -396,11 +412,11 @@ void OLED_Update(void)
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
- * @param Width 函数输入参数，语义由调用场景决定。
- * @param Height 函数输入参数，语义由调用场景决定。
+ * @brief 刷新指定区域对应的页数据。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @param Width 宽度（像素）。
+ * @param Height 高度（像素）。
  * @return 无。
  */
 void OLED_UpdateArea(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height)
@@ -409,13 +425,13 @@ void OLED_UpdateArea(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height)
     uint8_t end_page; // 结束页
     uint8_t page; // 当前页
 
-    //1. 参数与边界校验
+    // 1. 参数与边界校验
     if ((X >= OLED_WIDTH) || (Y >= OLED_HEIGHT) || (Width == 0U) || (Height == 0U))
     {
         return;
     }
 
-    //2. 裁剪刷新区域到屏幕范围
+    // 2. 裁剪刷新区域到屏幕范围
     if ((uint16_t)X + Width > OLED_WIDTH)
     {
         Width = (uint8_t)(OLED_WIDTH - X);
@@ -426,7 +442,7 @@ void OLED_UpdateArea(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height)
         Height = (uint8_t)(OLED_HEIGHT - Y);
     }
 
-    //3. 计算页范围并逐页发送区域数据
+    // 3. 计算页范围并逐页发送区域数据
     start_page = (uint8_t)(Y / 8U);
     end_page = (uint8_t)((Y + Height - 1U) / 8U);
 
@@ -438,22 +454,22 @@ void OLED_UpdateArea(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height)
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
+ * @brief 清空整屏显存缓存。
  * @param 无。
  * @return 无。
  */
 void OLED_Clear(void)
 {
-    //1. 清空整屏显存缓存
+    // 1. 清空整屏显存缓存
     memset(OLED_DisplayBuf, 0, sizeof(OLED_DisplayBuf));
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
- * @param Width 函数输入参数，语义由调用场景决定。
- * @param Height 函数输入参数，语义由调用场景决定。
+ * @brief 清空指定区域像素。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @param Width 宽度（像素）。
+ * @param Height 高度（像素）。
  * @return 无。
  */
 void OLED_ClearArea(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height)
@@ -461,7 +477,7 @@ void OLED_ClearArea(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height)
     uint16_t x; // 横向像素索引
     uint16_t y; // 纵向像素索引
 
-    //1. 参数校验与区域裁剪
+    // 1. 参数校验与区域裁剪
     if ((X >= OLED_WIDTH) || (Y >= OLED_HEIGHT) || (Width == 0U) || (Height == 0U))
     {
         return;
@@ -477,7 +493,7 @@ void OLED_ClearArea(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height)
         Height = (uint8_t)(OLED_HEIGHT - Y);
     }
 
-    //2. 清零指定区域像素位
+    // 2. 清零指定区域像素位
     for (y = Y; y < (uint16_t)Y + Height; y++) // 循环计数器
     {
         for (x = X; x < (uint16_t)X + Width; x++) // 循环计数器
@@ -488,7 +504,7 @@ void OLED_ClearArea(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height)
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
+ * @brief 对整屏显存执行按位翻转。
  * @param 无。
  * @return 无。
  */
@@ -497,7 +513,7 @@ void OLED_Reverse(void)
     uint8_t page; // 页索引
     uint8_t x; // 列索引
 
-    //1. 全屏按位取反
+    // 1. 全屏按位取反
     for (page = 0U; page < OLED_PAGE_NUM; page++) // 循环计数器
     {
         for (x = 0U; x < OLED_WIDTH; x++) // 循环计数器
@@ -508,11 +524,11 @@ void OLED_Reverse(void)
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
- * @param Width 函数输入参数，语义由调用场景决定。
- * @param Height 函数输入参数，语义由调用场景决定。
+ * @brief 对指定区域执行按位翻转。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @param Width 宽度（像素）。
+ * @param Height 高度（像素）。
  * @return 无。
  */
 void OLED_ReverseArea(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height)
@@ -520,7 +536,7 @@ void OLED_ReverseArea(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height)
     uint16_t x; // 横向像素索引
     uint16_t y; // 纵向像素索引
 
-    //1. 参数校验与区域裁剪
+    // 1. 参数校验与区域裁剪
     if ((X >= OLED_WIDTH) || (Y >= OLED_HEIGHT) || (Width == 0U) || (Height == 0U))
     {
         return;
@@ -536,7 +552,7 @@ void OLED_ReverseArea(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height)
         Height = (uint8_t)(OLED_HEIGHT - Y);
     }
 
-    //2. 对目标区域像素执行按位异或翻转
+    // 2. 对目标区域像素执行按位异或翻转
     for (y = Y; y < (uint16_t)Y + Height; y++) // 循环计数器
     {
         for (x = X; x < (uint16_t)X + Width; x++) // 循环计数器
@@ -547,18 +563,18 @@ void OLED_ReverseArea(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height)
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
- * @param Char 函数输入参数，语义由调用场景决定。
- * @param FontSize 数据长度或数量参数。
+ * @brief 在指定位置绘制单个 ASCII 字符。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @param Char 待显示 ASCII 字符。
+ * @param FontSize 字体宽度标识（OLED_8X16 或 OLED_6X8）。
  * @return 无。
  */
 void OLED_ShowChar(uint8_t X, uint8_t Y, char Char, uint8_t FontSize)
 {
     uint8_t index; // 字库索引
 
-    //1. 字符范围校验，超出可显示 ASCII 则替换为空格
+    // 1. 字符范围校验，超出可显示 ASCII 则替换为空格
     if ((Char < ' ') || (Char > '~'))
     {
         Char = ' ';
@@ -566,7 +582,7 @@ void OLED_ShowChar(uint8_t X, uint8_t Y, char Char, uint8_t FontSize)
 
     index = (uint8_t)(Char - ' ');
 
-    //2. 按字体大小选择字库并绘制
+    // 2. 按字体大小选择字库并绘制
     if (FontSize == OLED_8X16)
     {
         OLED_ShowImage(X, Y, 8U, 16U, OLED_F8x16[index]);
@@ -578,24 +594,24 @@ void OLED_ShowChar(uint8_t X, uint8_t Y, char Char, uint8_t FontSize)
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
- * @param String 函数输入参数，语义由调用场景决定。
- * @param FontSize 数据长度或数量参数。
+ * @brief 在指定位置绘制字符串。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @param String 待显示字符串指针。
+ * @param FontSize 字体宽度标识（OLED_8X16 或 OLED_6X8）。
  * @return 无。
  */
 void OLED_ShowString(uint8_t X, uint8_t Y, char *String, uint8_t FontSize)
 {
     uint16_t i = 0U; // 字符索引
 
-    //1. 参数校验
+    // 1. 参数校验
     if (String == NULL)
     {
         return;
     }
 
-    //2. 逐字符连续绘制字符串
+    // 2. 逐字符连续绘制字符串
     while (String[i] != '\0')
     {
         OLED_ShowChar((uint8_t)(X + i * FontSize), Y, String[i], FontSize);
@@ -604,41 +620,41 @@ void OLED_ShowString(uint8_t X, uint8_t Y, char *String, uint8_t FontSize)
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
- * @param Number 数据长度或数量参数。
- * @param Length 数据长度或数量参数。
- * @param FontSize 数据长度或数量参数。
+ * @brief 以十进制格式绘制无符号整数。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @param Number 待显示数值。
+ * @param Length 显示位数。
+ * @param FontSize 字体宽度标识（OLED_8X16 或 OLED_6X8）。
  * @return 无。
  */
 void OLED_ShowNum(uint8_t X, uint8_t Y, uint32_t Number, uint8_t Length, uint8_t FontSize)
 {
     uint8_t i; // 数字位索引
 
-    //1. 从高位到低位依次提取并绘制数字
+    // 1. 从高位到低位依次提取并绘制数字
     for (i = 0U; i < Length; i++) // 循环计数器
     {
-        uint32_t div = OLED_Pow(10U, (uint32_t)(Length - i - 1U)); // 局部业务变量
-        uint8_t digit = (uint8_t)((Number / div) % 10U); // 局部业务变量
+        uint32_t div = OLED_Pow(10U, (uint32_t)(Length - i - 1U)); // 局部计算变量
+        uint8_t digit = (uint8_t)((Number / div) % 10U); // 局部计算变量
         OLED_ShowChar((uint8_t)(X + i * FontSize), Y, (char)('0' + digit), FontSize);
     }
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
- * @param Number 数据长度或数量参数。
- * @param Length 数据长度或数量参数。
- * @param FontSize 数据长度或数量参数。
+ * @brief 以带符号十进制格式绘制整数。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @param Number 待显示数值。
+ * @param Length 显示位数。
+ * @param FontSize 字体宽度标识（OLED_8X16 或 OLED_6X8）。
  * @return 无。
  */
 void OLED_ShowSignedNum(uint8_t X, uint8_t Y, int32_t Number, uint8_t Length, uint8_t FontSize)
 {
     uint32_t abs_num; // 绝对值部分
 
-    //1. 绘制正负号并计算绝对值
+    // 1. 绘制正负号并计算绝对值
     if (Number >= 0)
     {
         OLED_ShowChar(X, Y, '+', FontSize);
@@ -650,27 +666,27 @@ void OLED_ShowSignedNum(uint8_t X, uint8_t Y, int32_t Number, uint8_t Length, ui
         abs_num = (uint32_t)(-(int64_t)Number);
     }
 
-    //2. 绘制数值部分
+    // 2. 绘制数值部分
     OLED_ShowNum((uint8_t)(X + FontSize), Y, abs_num, Length, FontSize);
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
- * @param Number 数据长度或数量参数。
- * @param Length 数据长度或数量参数。
- * @param FontSize 数据长度或数量参数。
+ * @brief 以十六进制格式绘制整数。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @param Number 待显示数值。
+ * @param Length 显示位数。
+ * @param FontSize 字体宽度标识（OLED_8X16 或 OLED_6X8）。
  * @return 无。
  */
 void OLED_ShowHexNum(uint8_t X, uint8_t Y, uint32_t Number, uint8_t Length, uint8_t FontSize)
 {
     uint8_t i; // 十六进制位索引
 
-    //1. 从高位到低位提取 nibble 并绘制
+    // 1. 从高位到低位提取 nibble 并绘制
     for (i = 0U; i < Length; i++) // 循环计数器
     {
-        uint8_t nibble = (uint8_t)((Number >> (4U * (Length - i - 1U))) & 0x0FU); // 局部业务变量
+        uint8_t nibble = (uint8_t)((Number >> (4U * (Length - i - 1U))) & 0x0FU); // 局部计算变量
         if (nibble < 10U)
         {
             OLED_ShowChar((uint8_t)(X + i * FontSize), Y, (char)('0' + nibble), FontSize);
@@ -683,26 +699,36 @@ void OLED_ShowHexNum(uint8_t X, uint8_t Y, uint32_t Number, uint8_t Length, uint
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
- * @param Number 数据长度或数量参数。
- * @param Length 数据长度或数量参数。
- * @param FontSize 数据长度或数量参数。
+ * @brief 以二进制格式绘制整数。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @param Number 待显示数值。
+ * @param Length 显示位数。
+ * @param FontSize 字体宽度标识（OLED_8X16 或 OLED_6X8）。
  * @return 无。
  */
 void OLED_ShowBinNum(uint8_t X, uint8_t Y, uint32_t Number, uint8_t Length, uint8_t FontSize)
 {
     uint8_t i; // 二进制位索引
 
-    //1. 从高位到低位逐位绘制 0/1
+    // 1. 从高位到低位逐位绘制 0/1
     for (i = 0U; i < Length; i++) // 循环计数器
     {
-        uint8_t bit = (uint8_t)((Number >> (Length - i - 1U)) & 0x01U); // 局部业务变量
+        uint8_t bit = (uint8_t)((Number >> (Length - i - 1U)) & 0x01U); // 局部计算变量
         OLED_ShowChar((uint8_t)(X + i * FontSize), Y, (char)('0' + bit), FontSize);
     }
 }
 
+/**
+ * @brief 以带符号浮点格式绘制数值。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @param Number 待显示浮点值。
+ * @param IntLength 整数部分显示位数。
+ * @param FraLength 小数部分显示位数。
+ * @param FontSize 字体宽度标识（OLED_8X16 或 OLED_6X8）。
+ * @return 无。
+ */
 void OLED_ShowFloatNum(uint8_t X,
                        uint8_t Y,
                        double Number,
@@ -716,7 +742,7 @@ void OLED_ShowFloatNum(uint8_t X,
     uint32_t int_part; // 整数部分
     uint32_t frac_part; // 小数部分
 
-    //1. 绘制符号位并取绝对值
+    // 1. 绘制符号位并取绝对值
     if (Number >= 0.0)
     {
         OLED_ShowChar(X, Y, '+', FontSize);
@@ -727,7 +753,7 @@ void OLED_ShowFloatNum(uint8_t X,
         abs_num = -Number;
     }
 
-    //2. 分离整数和小数并绘制
+    // 2. 分离整数和小数并绘制
     pow10 = OLED_Pow(10U, FraLength);
     scaled = (uint64_t)llround(abs_num * (double)pow10);
     int_part = (uint32_t)(scaled / pow10);
@@ -739,10 +765,10 @@ void OLED_ShowFloatNum(uint8_t X,
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
- * @param Chinese 函数输入参数，语义由调用场景决定。
+ * @brief 按字库索引绘制 UTF-8 中文字符串。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @param Chinese UTF-8 中文字符串指针。
  * @return 无。
  */
 void OLED_ShowChinese(uint8_t X, uint8_t Y, char *Chinese)
@@ -750,13 +776,13 @@ void OLED_ShowChinese(uint8_t X, uint8_t Y, char *Chinese)
     uint16_t offset = 0U; // UTF-8 字节偏移
     uint16_t idx = 0U; // 中文字符序号
 
-    //1. 参数校验
+    // 1. 参数校验
     if (Chinese == NULL)
     {
         return;
     }
 
-    //2. 按固定 UTF-8 宽度切分字符并在字库中查找绘制
+    // 2. 按固定 UTF-8 宽度切分字符并在字库中查找绘制
     while (Chinese[offset] != '\0')
     {
         char single[OLED_CHN_CHAR_WIDTH + 1U] = {0}; // 单个中文字符缓存
@@ -787,12 +813,12 @@ void OLED_ShowChinese(uint8_t X, uint8_t Y, char *Chinese)
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
- * @param Width 函数输入参数，语义由调用场景决定。
- * @param Height 函数输入参数，语义由调用场景决定。
- * @param Image 函数输入参数，语义由调用场景决定。
+ * @brief 在指定区域绘制位图数据。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @param Width 宽度（像素）。
+ * @param Height 高度（像素）。
+ * @param Image 位图数据指针。
  * @return 无。
  */
 void OLED_ShowImage(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height, const uint8_t *Image)
@@ -802,13 +828,13 @@ void OLED_ShowImage(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height, const u
     uint8_t page_count; // 图像页数
     uint8_t y_offset; // Y 偏移位
 
-    //1. 参数与边界校验
+    // 1. 参数与边界校验
     if ((Image == NULL) || (X >= OLED_WIDTH) || (Y >= OLED_HEIGHT) || (Width == 0U) || (Height == 0U))
     {
         return;
     }
 
-    //2. 裁剪区域并清空目标区域
+    // 2. 裁剪区域并清空目标区域
     if ((uint16_t)X + Width > OLED_WIDTH)
     {
         Width = (uint8_t)(OLED_WIDTH - X);
@@ -821,13 +847,13 @@ void OLED_ShowImage(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height, const u
 
     OLED_ClearArea(X, Y, Width, Height);
 
-    //3. 按页将图像数据合并到显存（处理页间跨越）
+    // 3. 按页将图像数据合并到显存（处理页间跨越）
     page_count = (uint8_t)((Height + 7U) / 8U);
     y_offset = (uint8_t)(Y & 0x07U);
 
     for (page = 0U; page < page_count; page++) // 循环计数器
     {
-        uint8_t dst_page = (uint8_t)(Y / 8U + page); // 局部业务变量
+        uint8_t dst_page = (uint8_t)(Y / 8U + page); // 局部计算变量
         for (i = 0U; i < Width; i++) // 循环计数器
         {
             uint8_t byte = Image[page * Width + i]; // 图像字节数据
@@ -849,42 +875,14 @@ void OLED_ShowImage(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height, const u
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
- * @param FontSize 数据长度或数量参数。
- * @param format 函数输入参数，语义由调用场景决定。
- * @param arg5 函数输入参数，语义由调用场景决定。
- * @return 无。
- */
-void OLED_Printf(uint8_t X, uint8_t Y, uint8_t FontSize, char *format, ...)
-{
-    char str[32]; // 格式化输出缓存
-    va_list arg; // 可变参数列表
-
-    //1. 参数校验
-    if (format == NULL)
-    {
-        return;
-    }
-
-    //2. 格式化字符串后绘制
-    va_start(arg, format);
-    (void)vsnprintf(str, sizeof(str), format, arg);
-    va_end(arg);
-
-    OLED_ShowString(X, Y, str, FontSize);
-}
-
-/**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
+ * @brief 绘制单个像素点。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
  * @return 无。
  */
 void OLED_DrawPoint(uint8_t X, uint8_t Y)
 {
-    //1. 边界校验并置位目标像素
+    // 1. 边界校验并置位目标像素
     if ((X >= OLED_WIDTH) || (Y >= OLED_HEIGHT))
     {
         return;
@@ -894,29 +892,29 @@ void OLED_DrawPoint(uint8_t X, uint8_t Y)
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
- * @return 返回计算结果或状态码，具体语义见实现。
+ * @brief 读取指定像素点状态。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @return 计算结果。
  */
 uint8_t OLED_GetPoint(uint8_t X, uint8_t Y)
 {
-    //1. 边界校验，越界返回 0
+    // 1. 边界校验，越界返回 0
     if ((X >= OLED_WIDTH) || (Y >= OLED_HEIGHT))
     {
         return 0U;
     }
 
-    //2. 读取目标像素位
+    // 2. 读取目标像素位
     return (uint8_t)((OLED_DisplayBuf[Y / 8U][X] >> (Y & 0x07U)) & 0x01U);
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X0 函数输入参数，语义由调用场景决定。
- * @param Y0 函数输入参数，语义由调用场景决定。
- * @param X1 函数输入参数，语义由调用场景决定。
- * @param Y1 函数输入参数，语义由调用场景决定。
+ * @brief 使用 Bresenham 算法绘制直线。
+ * @param X0 起点 X 坐标（像素）。
+ * @param Y0 起点 Y 坐标（像素）。
+ * @param X1 终点 X 坐标（像素）。
+ * @param Y1 终点 Y 坐标（像素）。
  * @return 无。
  */
 void OLED_DrawLine(uint8_t X0, uint8_t Y0, uint8_t X1, uint8_t Y1)
@@ -931,7 +929,7 @@ void OLED_DrawLine(uint8_t X0, uint8_t Y0, uint8_t X1, uint8_t Y1)
     int16_t sy = (y0 < y1) ? 1 : -1; // y 方向步进
     int16_t err = dx + dy; // 误差项
 
-    //1. Bresenham 算法逐点绘制直线
+    // 1. Bresenham 算法逐点绘制直线
     while (1)
     {
         OLED_DrawPoint((uint8_t)x0, (uint8_t)y0);
@@ -956,12 +954,12 @@ void OLED_DrawLine(uint8_t X0, uint8_t Y0, uint8_t X1, uint8_t Y1)
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
- * @param Width 函数输入参数，语义由调用场景决定。
- * @param Height 函数输入参数，语义由调用场景决定。
- * @param IsFilled 函数输入参数，语义由调用场景决定。
+ * @brief 绘制矩形（填充或空心）。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @param Width 宽度（像素）。
+ * @param Height 高度（像素）。
+ * @param IsFilled 填充模式（OLED_FILLED/OLED_UNFILLED）。
  * @return 无。
  */
 void OLED_DrawRectangle(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height, uint8_t IsFilled)
@@ -969,13 +967,13 @@ void OLED_DrawRectangle(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height, uin
     uint16_t x; // 横向像素索引
     uint16_t y; // 纵向像素索引
 
-    //1. 参数校验
+    // 1. 参数校验
     if ((Width == 0U) || (Height == 0U))
     {
         return;
     }
 
-    //2. 按填充模式绘制矩形
+    // 2. 按填充模式绘制矩形
     if (IsFilled == OLED_FILLED)
     {
         for (x = X; x < (uint16_t)X + Width; x++) // 循环计数器
@@ -996,27 +994,27 @@ void OLED_DrawRectangle(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height, uin
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X0 函数输入参数，语义由调用场景决定。
- * @param Y0 函数输入参数，语义由调用场景决定。
- * @param X1 函数输入参数，语义由调用场景决定。
- * @param Y1 函数输入参数，语义由调用场景决定。
- * @param X2 函数输入参数，语义由调用场景决定。
- * @param Y2 函数输入参数，语义由调用场景决定。
- * @param IsFilled 函数输入参数，语义由调用场景决定。
+ * @brief 绘制三角形（填充或空心）。
+ * @param X0 起点 X 坐标（像素）。
+ * @param Y0 起点 Y 坐标（像素）。
+ * @param X1 终点 X 坐标（像素）。
+ * @param Y1 终点 Y 坐标（像素）。
+ * @param X2 第三个顶点 X 坐标（像素）。
+ * @param Y2 第三个顶点 Y 坐标（像素）。
+ * @param IsFilled 填充模式（OLED_FILLED/OLED_UNFILLED）。
  * @return 无。
  */
 void OLED_DrawTriangle(uint8_t X0, uint8_t Y0, uint8_t X1, uint8_t Y1, uint8_t X2, uint8_t Y2, uint8_t IsFilled)
 {
-    //1. 填充模式：边界框内逐点判定是否在三角形内部
+    // 1. 填充模式：边界框内逐点判定是否在三角形内部
     if (IsFilled == OLED_FILLED)
     {
-        uint8_t min_x = X0; // 轴向或通道变量
-        uint8_t max_x = X0; // 轴向或通道变量
-        uint8_t min_y = Y0; // 轴向或通道变量
-        uint8_t max_y = Y0; // 轴向或通道变量
-        uint16_t x; // 轴向或通道变量
-        uint16_t y; // 轴向或通道变量
+        uint8_t min_x = X0; // 局部坐标变量
+        uint8_t max_x = X0; // 局部坐标变量
+        uint8_t min_y = Y0; // 局部坐标变量
+        uint8_t max_y = Y0; // 局部坐标变量
+        uint16_t x; // 局部坐标变量
+        uint16_t y; // 局部坐标变量
 
         if (X1 < min_x) { min_x = X1; }
         if (X2 < min_x) { min_x = X2; }
@@ -1039,7 +1037,7 @@ void OLED_DrawTriangle(uint8_t X0, uint8_t Y0, uint8_t X1, uint8_t Y1, uint8_t X
             }
         }
     }
-    //2. 非填充模式：绘制三条边
+    // 2. 非填充模式：绘制三条边
     else
     {
         OLED_DrawLine(X0, Y0, X1, Y1);
@@ -1049,35 +1047,35 @@ void OLED_DrawTriangle(uint8_t X0, uint8_t Y0, uint8_t X1, uint8_t Y1, uint8_t X
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
- * @param Radius 函数输入参数，语义由调用场景决定。
- * @param IsFilled 函数输入参数，语义由调用场景决定。
+ * @brief 绘制圆形（填充或空心）。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @param Radius 半径（像素）。
+ * @param IsFilled 填充模式（OLED_FILLED/OLED_UNFILLED）。
  * @return 无。
  */
 void OLED_DrawCircle(uint8_t X, uint8_t Y, uint8_t Radius, uint8_t IsFilled)
 {
-    //1. 填充模式：按 y 扫描并计算左右边界
+    // 1. 填充模式：按 y 扫描并计算左右边界
     if (IsFilled == OLED_FILLED)
     {
-        int16_t dy; // 轴向或通道变量
+        int16_t dy; // 局部坐标变量
         for (dy = -(int16_t)Radius; dy <= (int16_t)Radius; dy++) // 循环计数器
         {
-            int16_t dx = (int16_t)sqrt((double)((int32_t)Radius * Radius - (int32_t)dy * dy)); // 轴向或通道变量
-            int16_t x; // 轴向或通道变量
+            int16_t dx = (int16_t)sqrt((double)((int32_t)Radius * Radius - (int32_t)dy * dy)); // 局部坐标变量
+            int16_t x; // 局部坐标变量
             for (x = (int16_t)X - dx; x <= (int16_t)X + dx; x++) // 循环计数器
             {
                 OLED_DrawPoint((uint8_t)x, (uint8_t)((int16_t)Y + dy));
             }
         }
     }
-    //2. 非填充模式：中点圆算法绘制 8 对称点
+    // 2. 非填充模式：中点圆算法绘制 8 对称点
     else
     {
-        int16_t x = 0; // 轴向或通道变量
-        int16_t y = Radius; // 轴向或通道变量
-        int16_t d = (int16_t)(1 - Radius); // 局部业务变量
+        int16_t x = 0; // 局部坐标变量
+        int16_t y = Radius; // 局部坐标变量
+        int16_t d = (int16_t)(1 - Radius); // 局部计算变量
 
         while (x <= y)
         {
@@ -1105,56 +1103,66 @@ void OLED_DrawCircle(uint8_t X, uint8_t Y, uint8_t Radius, uint8_t IsFilled)
 }
 
 /**
- * @brief 执行当前函数对应的业务处理逻辑。
- * @param X 函数输入参数，语义由调用场景决定。
- * @param Y 函数输入参数，语义由调用场景决定。
- * @param A 函数输入参数，语义由调用场景决定。
- * @param B 函数输入参数，语义由调用场景决定。
- * @param IsFilled 函数输入参数，语义由调用场景决定。
+ * @brief 绘制椭圆（填充或空心）。
+ * @param X X 坐标（像素）。
+ * @param Y Y 坐标（像素）。
+ * @param A 椭圆长半轴（像素）。
+ * @param B 椭圆短半轴（像素）。
+ * @param IsFilled 填充模式（OLED_FILLED/OLED_UNFILLED）。
  * @return 无。
  */
 void OLED_DrawEllipse(uint8_t X, uint8_t Y, uint8_t A, uint8_t B, uint8_t IsFilled)
 {
     int16_t dy; // y 偏移量
 
-    //1. 参数校验
+    // 1. 参数校验
     if ((A == 0U) || (B == 0U))
     {
         return;
     }
 
-    //2. 填充模式：按 y 扫描，计算每行 x 半径
+    // 2. 填充模式：按 y 扫描，计算每行 x 半径
     if (IsFilled == OLED_FILLED)
     {
         for (dy = -(int16_t)B; dy <= (int16_t)B; dy++) // 循环计数器
         {
-            double t = 1.0 - ((double)dy * (double)dy) / ((double)B * (double)B); // 局部业务变量
+            double t = 1.0 - ((double)dy * (double)dy) / ((double)B * (double)B); // 局部计算变量
             if (t < 0.0)
             {
                 continue;
             }
-            int16_t dx = (int16_t)lround((double)A * sqrt(t)); // 轴向或通道变量
-            int16_t x; // 轴向或通道变量
+            int16_t dx = (int16_t)lround((double)A * sqrt(t)); // 局部坐标变量
+            int16_t x; // 局部坐标变量
             for (x = (int16_t)X - dx; x <= (int16_t)X + dx; x++) // 循环计数器
             {
                 OLED_DrawPoint((uint8_t)x, (uint8_t)((int16_t)Y + dy));
             }
         }
     }
-    //3. 非填充模式：按角度采样绘制椭圆边界
+    // 3. 非填充模式：按角度采样绘制椭圆边界
     else
     {
-        int16_t angle; // 控制量变量
+        int16_t angle; // 角度循环变量
         for (angle = -180; angle <= 180; angle++) // 循环计数器
         {
-            double rad = (double)angle * M_PI / 180.0; // 局部业务变量
-            int16_t px = (int16_t)lround((double)X + (double)A * cos(rad)); // 轴向或通道变量
-            int16_t py = (int16_t)lround((double)Y + (double)B * sin(rad)); // 轴向或通道变量
+            double rad = (double)angle * M_PI / 180.0; // 局部计算变量
+            int16_t px = (int16_t)lround((double)X + (double)A * cos(rad)); // 局部坐标变量
+            int16_t py = (int16_t)lround((double)Y + (double)B * sin(rad)); // 局部坐标变量
             OLED_DrawPoint((uint8_t)px, (uint8_t)py);
         }
     }
 }
 
+/**
+ * @brief 绘制圆弧或扇形。
+ * @param X 圆心 X 坐标（像素）。
+ * @param Y 圆心 Y 坐标（像素）。
+ * @param Radius 半径（像素）。
+ * @param StartAngle 起始角度（度，范围建议 -180~180）。
+ * @param EndAngle 结束角度（度，范围建议 -180~180）。
+ * @param IsFilled 填充模式（OLED_FILLED/OLED_UNFILLED）。
+ * @return 无。
+ */
 void OLED_DrawArc(uint8_t X,
                   uint8_t Y,
                   uint8_t Radius,
@@ -1165,21 +1173,23 @@ void OLED_DrawArc(uint8_t X,
     int16_t r_start = (IsFilled == OLED_FILLED) ? 0 : (int16_t)Radius; // 起始半径
     int16_t r; // 当前半径
 
-    //1. 按半径与角度扫描绘制扇形/圆弧
+    // 1. 按半径与角度扫描绘制扇形/圆弧
     for (r = r_start; r <= (int16_t)Radius; r++) // 循环计数器
     {
-        int16_t angle; // 控制量变量
+        int16_t angle; // 角度循环变量
         for (angle = -180; angle <= 180; angle++) // 循环计数器
         {
             if (OLED_AngleInRange(angle, StartAngle, EndAngle) != 0U)
             {
-                double rad = (double)angle * M_PI / 180.0; // 局部业务变量
-                int16_t px = (int16_t)lround((double)X + (double)r * cos(rad)); // 轴向或通道变量
-                int16_t py = (int16_t)lround((double)Y + (double)r * sin(rad)); // 轴向或通道变量
+                double rad = (double)angle * M_PI / 180.0; // 局部计算变量
+                int16_t px = (int16_t)lround((double)X + (double)r * cos(rad)); // 局部坐标变量
+                int16_t py = (int16_t)lround((double)Y + (double)r * sin(rad)); // 局部坐标变量
                 OLED_DrawPoint((uint8_t)px, (uint8_t)py);
             }
         }
     }
 }
+
+
 
 

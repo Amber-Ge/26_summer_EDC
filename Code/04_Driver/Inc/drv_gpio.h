@@ -1,15 +1,15 @@
 ﻿/**
  * @file    drv_gpio.h
  * @author  姜凯中
- * @version v1.0.0
- * @date    2026-03-23
- * @brief   GPIO 驱动层统一接口定义。
+ * @version v1.00
+ * @date    2026-03-24
+ * @brief   GPIO 驱动统一接口声明。
  * @details
- * 1. 文件作用：封装 GPIO 读/写/翻转操作并统一逻辑电平抽象。
- * 2. 解耦边界：驱动层只负责引脚访问，不负责设备语义（LED/继电器/传感器等）。
- * 3. 上层绑定：`mod_led`、`mod_relay`、`mod_sensor`、`mod_key` 等模块复用该接口。
- * 4. 下层依赖：直接调用 HAL GPIO 接口与 `main.h` 中端口/引脚定义。
- * 5. 生命周期：GPIO 时钟和模式需由 Core 初始化代码预先配置完成。
+ * 1. 本文件仅提供 GPIO 原子能力：读、写、翻转。
+ * 2. 本文件不承载业务语义，不区分 LED/继电器/按键等设备角色。
+ * 3. 逻辑电平抽象由 `gpio_level_e` 给出，屏蔽 HAL `GPIO_PinState` 细节。
+ * 4. 上层模块（`mod_led/mod_relay/mod_sensor/mod_key/mod_motor`）均通过本接口访问引脚。
+ * 5. GPIO 时钟与模式配置由 Core 初始化代码负责，本驱动不重复配置硬件。
  */
 #ifndef FINAL_GRADUATE_WORK_DRV_GPIO_H
 #define FINAL_GRADUATE_WORK_DRV_GPIO_H
@@ -17,36 +17,36 @@
 #include "main.h"
 
 /**
- * @brief GPIO 逻辑电平枚举。
+ * @brief GPIO 逻辑电平抽象。
  */
 typedef enum
 {
-    GPIO_LEVEL_LOW = 0,   // 低电平
-    GPIO_LEVEL_HIGH = 1   // 高电平
+    GPIO_LEVEL_LOW = 0,   // 逻辑低电平
+    GPIO_LEVEL_HIGH = 1   // 逻辑高电平
 } gpio_level_e;
 
 /**
- * @brief 写入指定 GPIO 引脚的逻辑电平。
- * @param GPIOx GPIO 端口（如 `GPIOA`）。
- * @param GPIO_Pin GPIO 引脚掩码（如 `GPIO_PIN_5`）。
- * @param level 目标逻辑电平（`GPIO_LEVEL_LOW` 或 `GPIO_LEVEL_HIGH`）。
- * @return 无返回值。
+ * @brief 向指定引脚写入逻辑电平。
+ * @param GPIOx GPIO 端口句柄，例如 `GPIOA`。
+ * @param GPIO_Pin GPIO 引脚掩码，例如 `GPIO_PIN_5`。
+ * @param level 目标逻辑电平。
+ * @note 本接口不校验端口与引脚是否已完成初始化，调用方需保证硬件已就绪。
  */
 void drv_gpio_write(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin, gpio_level_e level);
 
 /**
- * @brief 读取指定 GPIO 引脚的逻辑电平。
- * @param GPIOx GPIO 端口。
+ * @brief 读取指定引脚的逻辑电平。
+ * @param GPIOx GPIO 端口句柄。
  * @param GPIO_Pin GPIO 引脚掩码。
- * @return gpio_level_e 当前引脚逻辑电平。
+ * @return gpio_level_e 当前逻辑电平。
  */
 gpio_level_e drv_gpio_read(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin);
 
 /**
- * @brief 翻转指定 GPIO 引脚电平。
- * @param GPIOx GPIO 端口。
+ * @brief 翻转指定引脚输出电平。
+ * @param GPIOx GPIO 端口句柄。
  * @param GPIO_Pin GPIO 引脚掩码。
- * @return 无返回值。
+ * @note 翻转动作仅对配置为输出模式的引脚有意义。
  */
 void drv_gpio_toggle(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin);
 

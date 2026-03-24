@@ -1,306 +1,326 @@
 ﻿/**
  * @file    mod_motor.c
- * @brief   双电机模块实现。
+ * @author  姜凯中
+ * @version v1.00
+ * @date    2026-03-24
+ * @brief   双电机模块实现（ctx 架构，无兼容接口）。
  * @details
- * 1. 文件作用：实现双电机硬件绑定、方向控制、占空比输出和反馈量更新。
- * 2. 解耦边界：本文件只实现执行机构抽象，不包含 PID 参数整定和控制策略决策。
- * 3. 上层绑定：`DccTask` 周期调用速度/位置读取与占空比写入接口形成闭环。
- * 4. 下层依赖：`drv_pwm` 输出功率、`drv_gpio` 控制方向、`drv_encoder` 采集计数反馈。
+ * 1. 实现双电机硬件映射绑定、方向控制、PWM 输出与编码器反馈更新。
+ * 2. 通过统一 ctx 生命周期管理，保证初始化、运行、解绑过程可预测。
+ * 3. 运行期内置过零保护机制，避免正反切换时桥臂直接反灌。
  */
 
 #include "mod_motor.h"
 
 #include "drv_gpio.h"
-#include "drv_pwm.h"
 
 #include <string.h>
 
-/**
- * @brief 电机通道运行时状态。
- */
-typedef struct
-{
-    mod_motor_mode_e mode;      // 当前运行模式
-    int8_t last_sign;           // 上一次已执行方向符号（-1/0/1）
-    uint8_t zero_cross_pending; // 过零保护挂起标志（0/1）
-    int16_t pending_duty;       // 过零保护期间缓存的占空比命令
-    int32_t current_speed;      // 当前速度增量
-    int64_t total_position;     // 累计位置值
-    bool hw_ready;              // 当前通道硬件是否就绪
-} motor_state_t;
-
-static mod_motor_hw_cfg_t s_motor_hw_active[MOD_MOTOR_MAX]; // 当前生效的硬件映射表
-static bool s_motor_hw_bound = false;                       // 硬件映射绑定状态
-
-static motor_state_t s_motor_state[MOD_MOTOR_MAX];          // 各通道运行时状态
-static drv_pwm_dev_t s_pwm_dev[MOD_MOTOR_MAX];              // 各通道 PWM 设备对象
-static drv_encoder_dev_t s_enc_dev[MOD_MOTOR_MAX];          // 各通道编码器设备对象
+/* 默认上下文：供任务层直接使用。 */
+static mod_motor_ctx_t s_default_ctx;
 
 /**
- * @brief 校验电机通道ID是否合法。
- * @param id 电机通道ID。
- * @return true ID 在有效范围内。
- * @return false ID 越界。
+ * @brief 校验电机通道 ID。
  */
-static bool is_valid_motor_id(mod_motor_id_e id)
+static bool mod_motor_is_valid_id(mod_motor_id_e id)
 {
-    // 1. 判断通道ID是否位于定义范围 [MOD_MOTOR_LEFT, MOD_MOTOR_MAX)。
     return ((id >= MOD_MOTOR_LEFT) && (id < MOD_MOTOR_MAX));
 }
 
 /**
- * @brief 校验单个硬件映射项是否合法。
- * @param item 映射项指针。
- * @return true 映射项合法。
- * @return false 映射项非法。
+ * @brief 判断上下文是否可运行。
+ */
+static bool mod_motor_is_ctx_ready(const mod_motor_ctx_t *ctx)
+{
+    return ((ctx != NULL) && ctx->inited && ctx->bound);
+}
+
+/**
+ * @brief 校验单路硬件映射项是否完整。
+ * @details
+ * 该函数仅检查结构体字段合法性，不访问外设，不触发任何硬件动作。
  */
 static bool mod_motor_check_cfg_item(const mod_motor_hw_cfg_t *item)
 {
-    // 1. 先做空指针保护。
     if (item == NULL)
     {
         return false;
     }
 
-    // 2. GPIO 方向控制引脚必须完整。
+    /* 方向桥臂引脚必须完整。 */
     if ((item->in1_port == NULL) || (item->in2_port == NULL))
     {
         return false;
     }
 
-    // 3. PWM 和编码器的定时器句柄必须有效。
+    /* PWM/编码器定时器句柄必须有效。 */
     if ((item->pwm_htim == NULL) || (item->enc_htim == NULL))
     {
         return false;
     }
 
-    // 4. 编码器位宽必须是驱动层支持的 16 位或 32 位。
+    /* 编码器位宽只允许驱动层支持的 16 位或 32 位。 */
     if ((item->enc_counter_bits != DRV_ENCODER_BITS_16) &&
         (item->enc_counter_bits != DRV_ENCODER_BITS_32))
     {
         return false;
     }
 
-    // 5. 通过全部校验。
     return true;
 }
 
 /**
- * @brief 绑定电机硬件映射表。
- * @param map 映射表首地址。
- * @param map_num 映射项数量。
- * @return true 绑定成功。
- * @return false 参数非法或映射校验失败。
+ * @brief duty 限幅到 [-MOD_MOTOR_DUTY_MAX, MOD_MOTOR_DUTY_MAX]。
  */
-bool mod_motor_bind_map(const mod_motor_hw_cfg_t *map, uint8_t map_num)
+static int16_t mod_motor_clamp_duty(int16_t duty)
 {
-    // 1. 基础参数校验：指针不能为空，数量必须一致。
-    if ((map == NULL) || (map_num != MOD_MOTOR_MAX))
-    {
-        return false;
-    }
-
-    // 2. 逐项校验每个通道映射是否合法。
-    for (uint8_t i = 0U; i < MOD_MOTOR_MAX; i++) // i: 电机通道索引
-    {
-        if (!mod_motor_check_cfg_item(&map[i]))
-        {
-            return false;
-        }
-    }
-
-    // 3. 拷贝映射并设置绑定成功标志。
-    memcpy(s_motor_hw_active, map, sizeof(s_motor_hw_active));
-    s_motor_hw_bound = true;
-
-    // 4. 返回成功。
-    return true;
-}
-
-/**
- * @brief 解绑电机硬件映射表。
- * @return 无返回值。
- */
-void mod_motor_unbind_map(void)
-{
-    // 1. 仅清空绑定标志，映射缓存保留（重新绑定时会覆盖）。
-    s_motor_hw_bound = false;
-}
-
-/**
- * @brief 查询电机模块是否已绑定。
- * @return true 已绑定。
- * @return false 未绑定。
- */
-bool mod_motor_is_bound(void)
-{
-    // 1. 直接返回当前绑定状态。
-    return s_motor_hw_bound;
-}
-
-/**
- * @brief 对占空比做上下限裁剪。
- * @param duty 原始占空比命令。
- * @return int16_t 裁剪后的占空比。
- */
-static int16_t clamp_duty(int16_t duty)
-{
-    // 1. 上限保护：超过最大占空比时截断到上限。
     if (duty > (int16_t)MOD_MOTOR_DUTY_MAX)
     {
         return (int16_t)MOD_MOTOR_DUTY_MAX;
     }
 
-    // 2. 下限保护：低于负最大占空比时截断到下限。
     if (duty < -(int16_t)MOD_MOTOR_DUTY_MAX)
     {
         return -(int16_t)MOD_MOTOR_DUTY_MAX;
     }
 
-    // 3. 在有效范围内时原样返回。
     return duty;
 }
 
 /**
- * @brief 设置 TB6612 半桥方向引脚电平。
- * @param id 电机通道ID。
- * @param in1_level IN1 目标逻辑电平。
- * @param in2_level IN2 目标逻辑电平。
- * @return 无返回值。
+ * @brief 写入 TB6612 桥臂方向引脚。
+ * @param ctx 模块上下文。
+ * @param id 通道 ID。
+ * @param in1_level IN1 电平。
+ * @param in2_level IN2 电平。
  */
-static void set_half_bridge(mod_motor_id_e id, gpio_level_e in1_level, gpio_level_e in2_level)
+static void mod_motor_set_half_bridge(mod_motor_ctx_t *ctx,
+                                      mod_motor_id_e id,
+                                      gpio_level_e in1_level,
+                                      gpio_level_e in2_level)
 {
-    const mod_motor_hw_cfg_t *p_hw = &s_motor_hw_active[id]; // 当前通道硬件映射
+    const mod_motor_hw_cfg_t *p_hw = &ctx->map[id];
 
-    // 1. 设置 IN1 电平。
     drv_gpio_write(p_hw->in1_port, p_hw->in1_pin, in1_level);
-
-    // 2. 设置 IN2 电平。
     drv_gpio_write(p_hw->in2_port, p_hw->in2_pin, in2_level);
 }
 
 /**
- * @brief 施加驱动模式输出。
- * @param id 电机通道ID。
- * @param duty 目标占空比（绝对值）。
- * @param sign 方向符号（-1/0/1）。
- * @return 无返回值。
+ * @brief 安全写 PWM duty。
+ * @details
+ * 任何一次底层写入失败都会把通道降级为 `hw_ready=false`，
+ * 后续周期会停止对该通道进行主动驱动，避免持续输出异常。
  */
-static void apply_drive(mod_motor_id_e id, uint16_t duty, int8_t sign)
+static void mod_motor_write_pwm_duty_safe(mod_motor_ctx_t *ctx, mod_motor_id_e id, uint16_t duty)
 {
-    // 1. 若硬件未就绪，直接返回。
-    if (!s_motor_state[id].hw_ready)
+    if (drv_pwm_set_duty(&ctx->pwm_ctx[id], duty) != DRV_PWM_STATUS_OK)
+    {
+        ctx->state[id].hw_ready = false;
+    }
+}
+
+/**
+ * @brief 应用 DRIVE 模式输出。
+ * @param ctx 模块上下文。
+ * @param id 通道 ID。
+ * @param duty 绝对占空比。
+ * @param sign 方向符号（-1/0/1）。
+ */
+static void mod_motor_apply_drive(mod_motor_ctx_t *ctx, mod_motor_id_e id, uint16_t duty, int8_t sign)
+{
+    if (!ctx->state[id].hw_ready)
     {
         return;
     }
 
-    // 2. 根据符号决定方向；符号为 0 时执行滑行输出。
+    /* 正反向通过桥臂电平决定，零速时桥臂释放并强制 duty=0。 */
     if (sign > 0)
     {
-        set_half_bridge(id, GPIO_LEVEL_HIGH, GPIO_LEVEL_LOW);
+        mod_motor_set_half_bridge(ctx, id, GPIO_LEVEL_HIGH, GPIO_LEVEL_LOW);
     }
     else if (sign < 0)
     {
-        set_half_bridge(id, GPIO_LEVEL_LOW, GPIO_LEVEL_HIGH);
+        mod_motor_set_half_bridge(ctx, id, GPIO_LEVEL_LOW, GPIO_LEVEL_HIGH);
     }
     else
     {
-        set_half_bridge(id, GPIO_LEVEL_LOW, GPIO_LEVEL_LOW);
+        mod_motor_set_half_bridge(ctx, id, GPIO_LEVEL_LOW, GPIO_LEVEL_LOW);
         duty = 0U;
     }
 
-    // 3. 下发 PWM 占空比。
-    drv_pwm_set_duty(&s_pwm_dev[id], duty);
+    mod_motor_write_pwm_duty_safe(ctx, id, duty);
 }
 
 /**
- * @brief 施加刹车模式输出。
- * @param id 电机通道ID。
- * @return 无返回值。
+ * @brief 应用 BRAKE 模式输出。
  */
-static void apply_brake(mod_motor_id_e id)
+static void mod_motor_apply_brake(mod_motor_ctx_t *ctx, mod_motor_id_e id)
 {
-    // 1. TB6612 短刹：IN1/IN2 同时拉高。
-    set_half_bridge(id, GPIO_LEVEL_HIGH, GPIO_LEVEL_HIGH);
+    mod_motor_set_half_bridge(ctx, id, GPIO_LEVEL_HIGH, GPIO_LEVEL_HIGH);
 
-    // 2. 若 PWM 已就绪，拉到最大占空比增强刹车力度。
-    if (s_motor_state[id].hw_ready)
+    if (ctx->state[id].hw_ready)
     {
-        drv_pwm_set_duty(&s_pwm_dev[id], drv_pwm_get_duty_max(&s_pwm_dev[id]));
+        /* 刹车模式下 PWM 拉到最大，提升制动力。 */
+        mod_motor_write_pwm_duty_safe(ctx, id, drv_pwm_get_duty_max(&ctx->pwm_ctx[id]));
     }
 }
 
 /**
- * @brief 施加滑行模式输出。
- * @param id 电机通道ID。
- * @return 无返回值。
+ * @brief 应用 COAST 模式输出。
  */
-static void apply_coast(mod_motor_id_e id)
+static void mod_motor_apply_coast(mod_motor_ctx_t *ctx, mod_motor_id_e id)
 {
-    // 1. 滑行模式：IN1/IN2 同时拉低。
-    set_half_bridge(id, GPIO_LEVEL_LOW, GPIO_LEVEL_LOW);
+    mod_motor_set_half_bridge(ctx, id, GPIO_LEVEL_LOW, GPIO_LEVEL_LOW);
 
-    // 2. 若 PWM 已就绪，占空比清零。
-    if (s_motor_state[id].hw_ready)
+    if (ctx->state[id].hw_ready)
     {
-        drv_pwm_set_duty(&s_pwm_dev[id], 0U);
+        mod_motor_write_pwm_duty_safe(ctx, id, 0U);
     }
 }
 
 /**
- * @brief 执行驱动占空比命令（过零保护后的实际执行入口）。
- * @param id 电机通道ID。
- * @param duty_cmd 原始占空比命令。
- * @return 无返回值。
+ * @brief 执行 DRIVE 命令（已过过零保护判定）。
+ * @param ctx 模块上下文。
+ * @param id 通道 ID。
+ * @param duty_cmd 输入 duty 命令（可正可负）。
  */
-static void execute_drive_cmd(mod_motor_id_e id, int16_t duty_cmd)
+static void mod_motor_execute_drive_cmd(mod_motor_ctx_t *ctx, mod_motor_id_e id, int16_t duty_cmd)
 {
-    motor_state_t *p_state = &s_motor_state[id]; // 当前通道运行状态
-    int16_t duty = clamp_duty(duty_cmd);         // 限幅后的占空比
-    int8_t sign = 0;                             // 方向符号（-1/0/1）
-    uint16_t abs_duty = 0U;                      // 绝对值占空比
+    mod_motor_channel_state_t *p_state = &ctx->state[id];
+    int16_t duty_limited = mod_motor_clamp_duty(duty_cmd);
+    int8_t sign = 0;
+    uint16_t abs_duty = 0U;
 
-    // 1. 提取方向符号和绝对占空比。
-    if (duty > 0)
+    /* 把有符号 duty 分解为方向符号 + 无符号绝对值。 */
+    if (duty_limited > 0)
     {
         sign = 1;
-        abs_duty = (uint16_t)duty;
+        abs_duty = (uint16_t)duty_limited;
     }
-    else if (duty < 0)
+    else if (duty_limited < 0)
     {
         sign = -1;
-        abs_duty = (uint16_t)(-duty);
+        abs_duty = (uint16_t)(-duty_limited);
     }
 
-    // 2. 执行驱动输出。
-    apply_drive(id, abs_duty, sign);
-
-    // 3. 记录本次实际输出方向。
+    mod_motor_apply_drive(ctx, id, abs_duty, sign);
     p_state->last_sign = sign;
 }
 
-/**
- * @brief 初始化电机模块。
- * @return 无返回值。
- */
-void mod_motor_init(void)
+mod_motor_ctx_t *mod_motor_get_default_ctx(void)
 {
-    // 1. 强制绑定检查：未绑定时直接清空状态并退出。
-    if (!mod_motor_is_bound())
+    return &s_default_ctx;
+}
+
+bool mod_motor_ctx_init(mod_motor_ctx_t *ctx, const mod_motor_bind_t *bind)
+{
+    if (ctx == NULL)
     {
-        memset(s_motor_state, 0, sizeof(s_motor_state));
+        return false;
+    }
+
+    /* 全量清零后置 inited=true，确保生命周期从干净状态开始。 */
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->inited = true;
+
+    /* 支持“初始化即绑定”模式，便于 InitTask 一次性装配。 */
+    if (bind != NULL)
+    {
+        return mod_motor_bind(ctx, bind);
+    }
+
+    return true;
+}
+
+void mod_motor_ctx_deinit(mod_motor_ctx_t *ctx)
+{
+    if (ctx == NULL)
+    {
         return;
     }
 
-    // 2. 遍历所有电机通道执行初始化。
-    for (uint8_t i = 0U; i < MOD_MOTOR_MAX; i++) // i: 电机通道索引
-    {
-        const mod_motor_hw_cfg_t *p_hw = &s_motor_hw_active[i]; // 当前通道硬件映射
-        motor_state_t *p_state = &s_motor_state[i];             // 当前通道运行状态
-        bool pwm_ok;                                             // PWM 初始化与启动结果
-        bool enc_ok;                                             // 编码器初始化与启动结果
+    mod_motor_unbind(ctx);
+    memset(ctx, 0, sizeof(*ctx));
+}
 
-        // 2.1 先清空状态机运行状态。
+bool mod_motor_bind(mod_motor_ctx_t *ctx, const mod_motor_bind_t *bind)
+{
+    if ((ctx == NULL) || (!ctx->inited) || (bind == NULL) ||
+        (bind->map == NULL) || (bind->map_num != MOD_MOTOR_MAX))
+    {
+        return false;
+    }
+
+    /* 先全量校验映射项，保证绑定过程原子性。 */
+    for (uint8_t i = 0U; i < MOD_MOTOR_MAX; i++)
+    {
+        if (!mod_motor_check_cfg_item(&bind->map[i]))
+        {
+            return false;
+        }
+    }
+
+    /* 若已绑定旧映射，先做完整解绑。 */
+    if (ctx->bound)
+    {
+        mod_motor_unbind(ctx);
+    }
+
+    memcpy(ctx->map, bind->map, sizeof(ctx->map));
+    ctx->bound = true;
+
+    return true;
+}
+
+void mod_motor_unbind(mod_motor_ctx_t *ctx)
+{
+    if ((ctx == NULL) || (!ctx->inited))
+    {
+        return;
+    }
+
+    /* 解绑前尝试停掉所有通道，避免残留输出。 */
+    for (uint8_t i = 0U; i < MOD_MOTOR_MAX; i++)
+    {
+        (void)drv_pwm_stop(&ctx->pwm_ctx[i]);
+        (void)drv_encoder_stop(&ctx->enc_ctx[i]);
+    }
+
+    memset(ctx->map, 0, sizeof(ctx->map));
+    memset(ctx->state, 0, sizeof(ctx->state));
+    memset(ctx->pwm_ctx, 0, sizeof(ctx->pwm_ctx));
+    memset(ctx->enc_ctx, 0, sizeof(ctx->enc_ctx));
+    ctx->bound = false;
+}
+
+bool mod_motor_is_bound(const mod_motor_ctx_t *ctx)
+{
+    return mod_motor_is_ctx_ready(ctx);
+}
+
+void mod_motor_init(mod_motor_ctx_t *ctx)
+{
+    if ((ctx == NULL) || (!ctx->inited))
+    {
+        return;
+    }
+
+    if (!mod_motor_is_ctx_ready(ctx))
+    {
+        memset(ctx->state, 0, sizeof(ctx->state));
+        return;
+    }
+
+    for (uint8_t i = 0U; i < MOD_MOTOR_MAX; i++)
+    {
+        const mod_motor_hw_cfg_t *p_hw = &ctx->map[i];
+        mod_motor_channel_state_t *p_state = &ctx->state[i];
+        drv_pwm_status_e pwm_status;
+        drv_encoder_status_e enc_status;
+        bool pwm_ok;
+        bool enc_ok;
+
+        /* 每次 init 都重建通道运行态。 */
         p_state->mode = MOTOR_MODE_COAST;
         p_state->last_sign = 0;
         p_state->zero_cross_pending = 0U;
@@ -309,219 +329,199 @@ void mod_motor_init(void)
         p_state->total_position = 0;
         p_state->hw_ready = false;
 
-        // 2.2 初始化并启动 PWM。
-        pwm_ok = drv_pwm_device_init(&s_pwm_dev[i],
-                                     p_hw->pwm_htim,
-                                     p_hw->pwm_channel,
-                                     MOD_MOTOR_DUTY_MAX,
-                                     p_hw->pwm_invert);
-        if (pwm_ok)
+        /* 初始化并启动 PWM 通道。 */
+        pwm_status = drv_pwm_ctx_init(&ctx->pwm_ctx[i],
+                                      p_hw->pwm_htim,
+                                      p_hw->pwm_channel,
+                                      MOD_MOTOR_DUTY_MAX,
+                                      p_hw->pwm_invert);
+        if (pwm_status == DRV_PWM_STATUS_OK)
         {
-            pwm_ok = drv_pwm_start(&s_pwm_dev[i]);
+            pwm_status = drv_pwm_start(&ctx->pwm_ctx[i]);
         }
+        pwm_ok = (pwm_status == DRV_PWM_STATUS_OK);
 
-        // 2.3 初始化并启动编码器。
-        enc_ok = drv_encoder_device_init(&s_enc_dev[i],
-                                         p_hw->enc_htim,
-                                         p_hw->enc_counter_bits,
-                                         p_hw->enc_invert);
-        if (enc_ok)
+        /* 初始化并启动编码器通道。 */
+        enc_status = drv_encoder_ctx_init(&ctx->enc_ctx[i],
+                                             p_hw->enc_htim,
+                                             p_hw->enc_counter_bits,
+                                             p_hw->enc_invert);
+        if (enc_status == DRV_ENCODER_STATUS_OK)
         {
-            enc_ok = drv_encoder_start(&s_enc_dev[i]);
+            enc_status = drv_encoder_start(&ctx->enc_ctx[i]);
         }
+        enc_ok = (enc_status == DRV_ENCODER_STATUS_OK);
 
-        // 2.4 只有两项都成功才算硬件就绪。
+        /* 仅当 PWM 与编码器都正常时才标记通道可用。 */
         p_state->hw_ready = (bool)(pwm_ok && enc_ok);
 
-        // 2.5 上电默认进入滑行安全态。
-        apply_coast((mod_motor_id_e)i);
+        /* 上电后统一进入滑行安全态。 */
+        mod_motor_apply_coast(ctx, (mod_motor_id_e)i);
     }
 }
 
-/**
- * @brief 设置电机运行模式。
- * @param id 电机通道ID。
- * @param mode 目标运行模式。
- * @return 无返回值。
- */
-void mod_motor_set_mode(mod_motor_id_e id, mod_motor_mode_e mode)
+void mod_motor_set_mode(mod_motor_ctx_t *ctx, mod_motor_id_e id, mod_motor_mode_e mode)
 {
-    // 1. ID 非法直接返回。
-    if (!is_valid_motor_id(id))
+    if (!mod_motor_is_valid_id(id))
     {
         return;
     }
 
-    // 2. 模块未绑定时直接返回。
-    if (!mod_motor_is_bound())
+    if (!mod_motor_is_ctx_ready(ctx))
     {
         return;
     }
 
-    // 3. 记录模式并清除过零挂起标志。
-    s_motor_state[id].mode = mode;
-    s_motor_state[id].zero_cross_pending = 0U;
+    ctx->state[id].mode = mode;
+    ctx->state[id].zero_cross_pending = 0U;
 
-    // 4. 根据模式直接施加输出。
     if (mode == MOTOR_MODE_BRAKE)
     {
-        apply_brake(id);
+        mod_motor_apply_brake(ctx, id);
     }
     else if (mode == MOTOR_MODE_COAST)
     {
-        apply_coast(id);
+        mod_motor_apply_coast(ctx, id);
+    }
+    else
+    {
+        /* DRIVE 模式只切状态，不立刻改桥臂，等待后续 duty 命令驱动。 */
     }
 }
 
-/**
- * @brief 设置电机占空比。
- * @param id 电机通道ID。
- * @param duty 目标占空比（支持正反方向）。
- * @return 无返回值。
- */
-void mod_motor_set_duty(mod_motor_id_e id, int16_t duty)
+void mod_motor_set_duty(mod_motor_ctx_t *ctx, mod_motor_id_e id, int16_t duty)
 {
-    motor_state_t *p_state;      // 当前通道运行状态指针
-    int16_t duty_clamped;        // 限幅后的占空比命令
-    int8_t current_sign = 0;     // 当前命令方向符号（-1/0/1）
+    mod_motor_channel_state_t *p_state;
+    int16_t duty_limited;
+    int8_t current_sign = 0;
 
-    // 1. ID 非法直接返回。
-    if (!is_valid_motor_id(id))
+    if (!mod_motor_is_valid_id(id))
     {
         return;
     }
 
-    // 2. 模块未绑定直接返回。
-    if (!mod_motor_is_bound())
+    if (!mod_motor_is_ctx_ready(ctx))
     {
         return;
     }
 
-    // 3. 绑定当前通道状态对象。
-    p_state = &s_motor_state[id];
+    p_state = &ctx->state[id];
 
-    // 4. 硬件未就绪或模式非 DRIVE 时，不响应占空比命令。
+    /* 非 DRIVE 模式或硬件异常时，拒绝处理 duty 命令。 */
     if (!(p_state->hw_ready && (p_state->mode == MOTOR_MODE_DRIVE)))
     {
         return;
     }
 
-    // 5. 先限幅，再提取方向符号。
-    duty_clamped = clamp_duty(duty);
-    if (duty_clamped > 0)
+    duty_limited = mod_motor_clamp_duty(duty);
+
+    /* 解析当前命令方向符号。 */
+    if (duty_limited > 0)
     {
         current_sign = 1;
     }
-    else if (duty_clamped < 0)
+    else if (duty_limited < 0)
     {
         current_sign = -1;
     }
 
-    // 6. 若发生反向切换，执行过零保护。
+    /*
+     * 过零保护：
+     * 当上一周期已有方向且本次方向相反时，先 COAST 一周期，
+     * 并把目标命令挂起到 pending_duty，下一次 tick 再执行。
+     */
     if ((p_state->last_sign != 0) && (current_sign != 0) && (p_state->last_sign != current_sign))
     {
-        apply_coast(id);
+        mod_motor_apply_coast(ctx, id);
         p_state->zero_cross_pending = 1U;
-        p_state->pending_duty = duty_clamped;
+        p_state->pending_duty = duty_limited;
         p_state->last_sign = current_sign;
     }
     else
     {
-        // 7. 同向或静止启动直接执行；若处于挂起期，仅更新挂起值。
         if (p_state->zero_cross_pending == 0U)
         {
-            execute_drive_cmd(id, duty_clamped);
+            mod_motor_execute_drive_cmd(ctx, id, duty_limited);
         }
         else
         {
-            p_state->pending_duty = duty_clamped;
+            /* 已在过零窗口内，更新挂起命令，等待 tick 统一释放。 */
+            p_state->pending_duty = duty_limited;
         }
     }
 }
 
-/**
- * @brief 电机周期更新入口。
- * @return 无返回值。
- */
-void mod_motor_tick(void)
+void mod_motor_tick(mod_motor_ctx_t *ctx)
 {
-    // 1. 模块未绑定时直接返回。
-    if (!mod_motor_is_bound())
+    if (!mod_motor_is_ctx_ready(ctx))
     {
         return;
     }
 
-    // 2. 遍历所有通道刷新状态。
-    for (uint8_t i = 0U; i < MOD_MOTOR_MAX; i++) // i: 电机通道索引
+    for (uint8_t i = 0U; i < MOD_MOTOR_MAX; i++)
     {
-        motor_state_t *p_state = &s_motor_state[i]; // 当前通道运行状态
+        mod_motor_channel_state_t *p_state = &ctx->state[i];
+        int32_t encoder_delta = 0;
 
-        // 2.1 硬件就绪时更新速度和位置。
-        if (p_state->hw_ready)
+        if (!p_state->hw_ready)
         {
-            p_state->current_speed = drv_encoder_get_delta(&s_enc_dev[i]);
-            p_state->total_position += p_state->current_speed;
+            p_state->current_speed = 0;
+            continue;
+        }
 
-            // 2.2 处理过零挂起命令。
-            if (p_state->zero_cross_pending != 0U)
-            {
-                p_state->zero_cross_pending = 0U;
-                if (p_state->mode == MOTOR_MODE_DRIVE)
-                {
-                    execute_drive_cmd((mod_motor_id_e)i, p_state->pending_duty);
-                }
-            }
+        /* 读取编码器增量并更新速度/位置反馈。 */
+        if (drv_encoder_get_delta(&ctx->enc_ctx[i], &encoder_delta) == DRV_ENCODER_STATUS_OK)
+        {
+            p_state->current_speed = encoder_delta;
+            p_state->total_position += (int64_t)p_state->current_speed;
         }
         else
         {
-            // 2.3 硬件未就绪时速度读数强制归零。
+            /* 反馈链路失效后，降级为不可用通道。 */
+            p_state->hw_ready = false;
             p_state->current_speed = 0;
+            continue;
+        }
+
+        /* 释放过零保护挂起命令（仅 DRIVE 模式下生效）。 */
+        if (p_state->zero_cross_pending != 0U)
+        {
+            p_state->zero_cross_pending = 0U;
+            if (p_state->mode == MOTOR_MODE_DRIVE)
+            {
+                mod_motor_execute_drive_cmd(ctx, (mod_motor_id_e)i, p_state->pending_duty);
+            }
         }
     }
 }
 
-/**
- * @brief 获取当前速度。
- * @param id 电机通道ID。
- * @return int32_t 当前速度；非法参数或未绑定时返回 0。
- */
-int32_t mod_motor_get_speed(mod_motor_id_e id)
+int32_t mod_motor_get_speed(const mod_motor_ctx_t *ctx, mod_motor_id_e id)
 {
-    // 1. ID 非法直接返回 0。
-    if (!is_valid_motor_id(id))
+    if (!mod_motor_is_valid_id(id))
     {
         return 0;
     }
 
-    // 2. 模块未绑定直接返回 0。
-    if (!mod_motor_is_bound())
+    if (!mod_motor_is_ctx_ready(ctx))
     {
         return 0;
     }
 
-    // 3. 返回缓存速度。
-    return s_motor_state[id].current_speed;
+    return ctx->state[id].current_speed;
 }
 
-/**
- * @brief 获取累计位置。
- * @param id 电机通道ID。
- * @return int64_t 累计位置；非法参数或未绑定时返回 0。
- */
-int64_t mod_motor_get_position(mod_motor_id_e id)
+int64_t mod_motor_get_position(const mod_motor_ctx_t *ctx, mod_motor_id_e id)
 {
-    // 1. ID 非法直接返回 0。
-    if (!is_valid_motor_id(id))
+    if (!mod_motor_is_valid_id(id))
     {
         return 0;
     }
 
-    // 2. 模块未绑定直接返回 0。
-    if (!mod_motor_is_bound())
+    if (!mod_motor_is_ctx_ready(ctx))
     {
         return 0;
     }
 
-    // 3. 返回累计位置。
-    return s_motor_state[id].total_position;
+    return ctx->state[id].total_position;
 }
+

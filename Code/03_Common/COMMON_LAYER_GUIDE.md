@@ -1,271 +1,221 @@
-# Common 层开发与维护详解
+﻿# Common 层开发与维护详解
 
 ## 文档元信息
 
 | 字段 | 内容 |
 | --- | --- |
-| 文档名称 | Common Layer Guide |
+| 文档名称 | COMMON_LAYER_GUIDE |
 | 所在层 | `Code/03_Common` |
-| 作者 | 姜凯中（工程原作者） / Codex（文档整理与体系化说明） |
-| 版本 | v1.0.0 |
+| 作者 | 姜凯中 |
+| 版本 | v1.00 |
 | 最后更新 | 2026-03-24 |
 | 适用工程 | `FInal_graduate_work` |
-| 读者对象 | 控制算法开发者、协议开发者、任务层维护人员 |
+| 阅读对象 | 算法开发、模块开发、任务层维护人员 |
 
 ---
 
 ## 1. 层定位与边界
 
-Common 层是“纯算法与通用工具层”，目标是把可复用逻辑从业务代码中剥离出来。
+Common 层是“纯算法与通用工具层”，目标是把可复用逻辑从业务流程中剥离出来。
 
 Common 层负责：
 
-1. 通用算法与数学工具（PID、校验、字符串转换）。
-2. 编译期参数集中管理（`pid_config.h`）。
-3. 与硬件无关的基础能力复用。
+1. 数学控制算法（`pid_pos`、`pid_inc`、`pid_multi`）。
+2. 通用工具算法（`common_checksum`、`common_str`）。
+3. 算法默认参数集中管理（`pid_config.h`）。
 
 Common 层不负责：
 
-1. 任务调度、状态机逻辑。
-2. 设备访问、协议收发、HAL 调用。
+1. 任务调度、信号量、互斥锁、状态机编排。
+2. HAL 外设访问与中断处理。
+3. 具体协议帧收发和硬件资源绑定。
 
 ---
 
-## 2. 目录与组件总览
+## 2. 目录与文件职责
 
-| 子目录/文件 | 作用 | 主要使用方 |
+| 文件 | 作用 | 直接上层 |
 | --- | --- | --- |
-| `Inc/common_checksum.h` + `Src/common_checksum.c` | XOR 校验 | `mod_k230` |
-| `Inc/common_str.h` + `Src/common_str.c` | 数值转字符串 | `mod_vofa` |
-| `PID/pid_config.h` | 控制参数默认值集中定义 | `task_dcc`, PID 组件 |
-| `PID/pid_inc.h/.c` | 增量式 PID | `task_dcc`, `pid_multi` |
-| `PID/pid_pos.h/.c` | 位置式 PID | `task_dcc`, `task_stepper`, `pid_multi` |
-| `PID/pid_multi.h/.c` | 串级 PID 组合 | 可供后续控制任务扩展 |
+| `Inc/common_checksum.h` + `Src/common_checksum.c` | 校验算法接口与实现（XOR） | `mod_k230` 等协议模块 |
+| `Inc/common_str.h` + `Src/common_str.c` | 数值转字符串工具 | `mod_vofa`、OLED 显示打包 |
+| `PID/pid_config.h` | PID 默认参数集中定义 | `task_dcc`、PID 组件 |
+| `PID/pid_inc.h` + `PID/pid_inc.c` | 增量式 PID | `task_dcc`、`pid_multi` |
+| `PID/pid_pos.h` + `PID/pid_pos.c` | 位置式 PID | `task_dcc`、`task_stepper`、`pid_multi` |
+| `PID/pid_multi.h` + `PID/pid_multi.c` | 串级/单环组合 PID 框架 | 控制任务扩展 |
 
 ---
 
-## 3. `common_checksum` 详解
+## 3. 统一接口规范
 
-接口：
+本层函数遵循以下统一规则：
 
-1. `common_checksum_xor_u8(const uint8_t *data, uint16_t len)`
-
-行为：
-
-1. 对输入字节序列逐字节异或。
-2. 空指针或长度为 0 时返回 `0`。
-
-当前使用场景：
-
-1. `mod_k230` 协议帧校验字段计算。
-
-扩展建议：
-
-1. 后续新增 CRC8/CRC16 时可在同层新增 `common_checksum_crc8/crc16`，保持调用层不依赖具体算法实现细节。
+1. 所有对象类算法都提供 `Init/SetTarget/Compute/Reset` 语义。
+2. 所有对外接口先做空指针保护。
+3. 所有限幅参数都按“可配置 + 默认安全值”设计。
+4. 所有计算接口都保证“单次调用可预期”，不隐式依赖全局变量。
 
 ---
 
-## 4. `common_str` 详解
+## 4. `common_checksum` 详细说明
 
-接口：
+### 4.1 功能
 
-1. `common_uint_to_str`
-2. `common_int_to_str`
-3. `common_float_to_str`
+`common_checksum_xor_u8` 用于计算字节流 XOR 校验值。
 
-设计特点：
+### 4.2 输入输出约束
 
-1. 全部带缓冲区长度参数，防越界。
-2. 浮点转换精度由 `COMMON_STR_FLOAT_PRECISION` 控制。
-3. 内部使用工具函数 `_u32_to_str_tool`，减少重复逻辑。
+1. `data` 允许为空；为空时返回 `0`。
+2. `len == 0` 时返回 `0`。
+3. 不访问越界内存，不依赖外部状态。
 
-当前使用场景：
+### 4.3 典型调用链
 
-1. `mod_vofa` 组包发送 `float/int/uint` 数组文本。
-
-维护建议：
-
-1. 不要在该层引入 `sprintf` 依赖，保持嵌入式可控性。
-2. 若增大浮点精度，需评估发送带宽和缓冲区占用。
+1. 上层模块组帧后，传入“帧头到末尾前一字节”的区间。
+2. 将返回值写入协议校验字段。
 
 ---
 
-## 5. PID 体系总体设计
+## 5. `common_str` 详细说明
 
-PID 组件由三部分组成：
+### 5.1 功能
 
-1. `pid_pos`：位置式 PID，适合绝对误差闭环。
-2. `pid_inc`：增量式 PID，适合速度等增量调节场景。
-3. `pid_multi`：外环+内环组合框架，支持算法可切换。
+提供 `uint32/int32/float` 到 C 字符串的轻量转换，避免直接依赖 `sprintf`。
 
-核心解耦点：
+### 5.2 设计要点
 
-1. PID 仅做数学计算，不直接访问电机或传感器。
-2. 具体采样周期由调用方保证，PID 不持有时间基准。
-3. 目标值设置与输出执行完全由上层任务管理。
+1. 所有接口都要求调用方提供输出缓冲区与长度。
+2. 通过 `COMMON_STR_FLOAT_PRECISION` 控制浮点小数位。
+3. 内部使用 `_u32_to_str_tool` 统一整数转换流程，减少重复逻辑。
+
+### 5.3 维护注意
+
+1. 若提高小数位精度，需同步评估串口带宽与缓冲区长度。
+2. 若后续引入科学计数法，建议新增独立函数，不破坏现有接口行为。
 
 ---
 
 ## 6. `pid_config.h` 参数管理
 
-主要参数：
+该文件是 PID 相关默认参数唯一入口，当前包含：
 
-1. `MOTOR_TARGET_SPEED`、`MOTOR_TARGET_ERROR`
-2. 位置环：`MOTOR_POS_KP/KI/KD/OUTPUT_MAX/INTEGRAL_MAX`
-3. 速度环：`MOTOR_SPEED_KP/KI/KD`
+1. 目标值参数：`MOTOR_TARGET_SPEED`、`MOTOR_TARGET_ERROR`。
+2. 位置环参数：`MOTOR_POS_KP/KI/KD/OUTPUT_MAX/INTEGRAL_MAX`。
+3. 速度环参数：`MOTOR_SPEED_KP/KI/KD`。
 
-管理原则：
+维护要求：
 
-1. 所有“默认参数”集中定义，避免散落在任务代码中。
-2. 改参后需记录“为什么改、影响哪条控制链路”。
-3. 涉及安全边界参数（输出限幅）必须配套回归测试。
+1. 修改参数后必须记录“修改原因 + 影响链路 + 回归结果”。
+2. 涉及限幅参数变更时，必须做整车安全回归。
 
 ---
 
-## 7. `pid_inc`（增量式 PID）详解
+## 7. `pid_inc`（增量式 PID）
 
-关键接口：
+### 7.1 适用场景
 
-1. `PID_Inc_Init`
-2. `PID_Inc_SetTarget`
-3. `PID_Inc_Compute`
-4. `PID_Inc_Reset`
+1. 速度环等“控制增量”更敏感的场景。
+2. 执行器输出需要平滑累加的场景。
 
-计算公式：
+### 7.2 计算公式
 
 1. `delta_u = Kp*(e(k)-e(k-1)) + Ki*e(k) + Kd*(e(k)-2e(k-1)+e(k-2))`
 2. `u(k) = u(k-1) + delta_u`
 
-实现要点：
+### 7.3 内置保护
 
-1. 内部维护 `error/last_error/prev_error`。
-2. 输出有上下限，默认对称。
-
-适用场景：
-
-1. 速度环控制（当前用于 DCC 左右轮速度环）。
+1. 空指针保护。
+2. 输出上下限限幅（默认对称）。
+3. 运行态复位接口，防止任务切换时历史状态污染。
 
 ---
 
-## 8. `pid_pos`（位置式 PID）详解
+## 8. `pid_pos`（位置式 PID）
 
-关键接口：
+### 8.1 适用场景
 
-1. `PID_Pos_Init`
-2. `PID_Pos_SetTarget`
-3. `PID_Pos_SetOutputLimit`
-4. `PID_Pos_SetIntegralLimit`
-5. `PID_Pos_Compute`
-6. `PID_Pos_Reset`
+1. 位置偏差、角度偏差、轨迹偏差等绝对误差闭环。
+2. 需要显式观察 `P/I/D` 分量进行调试的场景。
 
-计算结构：
+### 8.2 计算流程
 
-1. `error = target - measure`
-2. `integral += error`（并限幅）
-3. `p_term = kp*error`
-4. `i_term = ki*integral`
-5. `d_term = kd*(error-last_error)`
-6. `output = p+i+d`（并限幅）
+1. 计算误差：`error = target - measure`。
+2. 积分累加并限幅：防积分饱和。
+3. 计算 `p_term/i_term/d_term`。
+4. 合成输出并限幅。
 
-实现要点：
+### 8.3 内置保护
 
-1. 内置积分限幅与输出限幅，抑制饱和。
-2. 暴露 `p/i/d` 分量，便于调试可观测。
-
-适用场景：
-
-1. 位置差纠偏（DCC 直线模式）。
-2. 视觉误差转位置命令（Stepper 任务）。
+1. 输出限幅与积分限幅可独立配置。
+2. 支持运行中修改限幅并立即裁剪当前状态。
 
 ---
 
-## 9. `pid_multi`（串级 PID）详解
+## 9. `pid_multi`（多环/串级 PID）
 
-关键接口：
+### 9.1 功能定位
 
-1. `PID_Multi_Init`
-2. `PID_Multi_SetCascadeEnable`
-3. `PID_Multi_SetOuterAlgo`
-4. `PID_Multi_SetInnerAlgo`
-5. `PID_Multi_SetInnerTargetLimit`
-6. `PID_Multi_Compute`
+将“外环 + 内环”统一抽象为一个对象，支持串级与单环两种模式。
 
-运行模式：
+### 9.2 运行模式
 
-1. 串级开启：外环输出作为内环目标。
-2. 串级关闭：总目标直接进入内环。
+1. 串级开启：`outer(target, outer_feedback) -> inner_target`，再执行内环。
+2. 串级关闭：`target` 直接作为 `inner_target`。
 
-扩展能力：
+### 9.3 解耦设计
 
-1. 外环可选位置式或增量式。
-2. 内环可选位置式或增量式。
-3. 内环目标可限幅，防止外环过激输出。
-
-当前状态：
-
-1. 已实现并可复用。
-2. 当前工程主链路暂未大规模使用 `pid_multi`，属于可扩展能力储备。
+1. 外环与内环都支持 `位置式/增量式` 动态切换。
+2. 外环输出会经过 `inner_target` 限幅，防止内环目标突变。
+3. 不耦合电机驱动，仅输出最终控制量。
 
 ---
 
-## 10. Common 层调用关系
+## 10. 调用关系总览
 
-1. `task_dcc` -> `PID_Pos/PID_Inc`
-2. `task_stepper` -> `PID_Pos`
-3. `mod_k230` -> `common_checksum`
-4. `mod_vofa` -> `common_str`
-5. `pid_multi` -> `pid_pos + pid_inc`
-
----
-
-## 11. 扩展指南（Common 层）
-
-新增通用工具函数建议：
-
-1. 接口必须无硬件依赖。
-2. 必须提供参数边界检查。
-3. 尽量避免动态内存分配。
-
-新增控制算法建议：
-
-1. 先定义独立头文件与对象结构体。
-2. 暴露 `Init/SetTarget/Compute/Reset` 统一接口风格。
-3. 默认参数统一接入 `pid_config.h` 或同类配置文件。
+1. `task_dcc` 调用 `pid_pos/pid_inc` 完成底盘闭环控制。
+2. `task_stepper` 调用 `pid_pos` 完成视觉误差收敛控制。
+3. `mod_k230` 调用 `common_checksum` 做协议校验。
+4. `mod_vofa` 调用 `common_str` 做文本打包。
+5. `pid_multi` 依赖 `pid_pos + pid_inc`，作为扩展能力保留。
 
 ---
 
-## 12. 维护与回归建议
+## 11. 后续扩展指南
 
-维护检查：
+### 11.1 新增通用工具函数
 
-1. 参数改动是否同步更新文档。
-2. 输出限幅和积分限幅是否仍满足安全边界。
-3. 算法接口是否保持向后兼容。
+1. 保持“无硬件依赖、无 RTOS 依赖”。
+2. 提供明确参数边界与错误返回。
+3. 保持线程上下文可重入（尽量无静态可变状态）。
 
-建议回归用例：
+### 11.2 新增控制算法
 
-1. `PID_Pos`：阶跃输入观察超调与稳态误差。
-2. `PID_Inc`：速度目标突变时输出变化是否平滑。
-3. `common_str`：极值、负值、零值、缓冲区边界。
-4. `common_checksum`：已知向量校验值一致性。
+1. 新建独立 `h/c`，并遵循 `Init/SetTarget/Compute/Reset`。
+2. 参数默认值接入 `pid_config.h` 或同类配置文件。
+3. 在本层文档补充“适用场景、调参建议、风险边界”。
+
+---
+
+## 12. 维护与回归检查清单
+
+1. 参数修改后是否同步更新文档。
+2. 输出/积分限幅是否仍满足安全边界。
+3. `Compute` 调用周期是否稳定（抖动会直接影响控制效果）。
+4. 关键接口是否保持向后兼容（函数名、参数、语义）。
+5. 回归测试是否覆盖：阶跃、突变、边界值、异常输入。
 
 ---
 
 ## 13. 常见问题排查
 
-1. 控制输出振荡：
-   - 先看是否调用周期变化，再看 `kp/ki/kd`，最后看传感器噪声。
-2. 输出长时间饱和：
-   - 检查 `out_max/integral_max` 是否过小或目标不可达。
-3. VOFA 数值显示异常：
-   - 检查 `common_float_to_str` 精度配置和发送缓冲长度。
-4. K230 校验失败：
-   - 检查协议字段范围和 `common_checksum_xor_u8` 输入区间。
+1. 输出振荡：先查调用周期，再查 `kp/ki/kd`，最后查反馈噪声。
+2. 长时间饱和：检查目标是否可达与限幅是否过紧。
+3. 调参无效：检查是否调用了错误 PID 对象或未生效目标。
+4. 数值显示异常：检查 `common_str` 缓冲区长度和精度设置。
 
 ---
 
 ## 14. 版本演进建议
 
-1. Common 层新增函数时必须补充“调用场景”和“边界语义”。
-2. PID 参数体系如改名，需提供迁移表，避免任务层参数断链。
-3. 若未来引入定点算法，建议新增并行模块，保持浮点版本可回退。
+1. 保持算法接口命名稳定，新增能力优先“增量扩展”。
+2. 对破坏性变更提供迁移说明（旧参数映射、旧接口替换表）。
+3. 当引入定点版本时，与浮点版本并行维护至少一个周期。

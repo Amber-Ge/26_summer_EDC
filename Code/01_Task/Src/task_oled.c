@@ -1,12 +1,17 @@
 ﻿/**
  * @file    task_oled.c
+ * @author  姜凯中
+ * @version v1.00
+ * @date    2026-03-24
  * @brief   OLED 显示任务实现。
  * @details
- * 1. 文件作用：实现 OLED 页面更新与显示内容调度。
- * 2. 上下层绑定：上层由任务调度层调用；下层依赖 `mod_oled` 显示模块接口。
+ * 1. 周期采样电池电压并刷新 OLED 页面显示。
+ * 2. 页面包含：电压、电控模式值、DCC 运行状态文本。
+ * 3. 任务通过双时基（采样周期 + 刷新周期）降低无效 I2C 访问。
  */
+
 #include "task_oled.h"
-#include "adc.h"
+
 #include "i2c.h"
 #include "mod_oled.h"
 #include "task_dcc.h"
@@ -14,46 +19,53 @@
 
 /**
  * @brief 判断当前 tick 是否达到目标 tick（支持回绕）。
- * @param now 当前 tick。
- * @param target 目标触发 tick。
- * @return 达到/超过目标返回 1，否则返回 0。
  */
 static uint8_t task_oled_time_reached(uint32_t now, uint32_t target)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     return (uint8_t)((int32_t)(now - target) >= 0);
 }
 
 /**
- * @brief OLED 任务主循环：周期采样电池电压并刷新模式/状态显示。
- * @param argument 任务参数（未使用）。
- * @return 无。
+ * @brief OLED 任务主循环。
+ * @param argument RTOS 任务参数（当前未使用）。
  */
 void StartOledTask(void *argument)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
-    uint32_t tick_freq; // RTOS tick 频率
-    uint32_t oled_period_tick; // OLED 刷新周期（tick）
-    uint32_t sample_period_tick; // 电池采样周期（tick）
-    uint32_t next_oled_tick; // 下次 OLED 刷新时刻
-    uint32_t next_sample_tick; // 下次电池采样时刻
-    float latest_voltage = 0.0f; // 最近一次有效电压值
-    uint8_t mode_value; // DCC 当前模式
-    uint8_t run_state_value; // DCC 当前运行状态
+    uint32_t tick_freq;         /* RTOS tick 频率 */
+    uint32_t oled_period_tick;  /* 页面刷新周期（tick） */
+    uint32_t sample_period_tick;/* 电压采样周期（tick） */
+    uint32_t next_oled_tick;    /* 下一次页面刷新触发 tick */
+    uint32_t next_sample_tick;  /* 下一次电压采样触发 tick */
 
-    char voltage_label[] = "voltage:"; // 电压标签字符串
-    char mode_label[] = "mode:"; // 模式标签字符串
-    char task_on[] = "task:ON"; // 任务开启状态字符串
-    char task_off[] = "task:OFF"; // 任务关闭状态字符串
-    char task_prepare[] = "task:PREP"; // 任务准备状态字符串
-    char task_stop[] = "task:STOP"; // 任务停止状态字符串
+    float latest_voltage = 0.0f; /* 最新电压缓存值 */
+    uint8_t mode_value;          /* DCC 模式值 */
+    uint8_t run_state_value;     /* DCC 运行状态值 */
+
+    mod_battery_ctx_t *battery_ctx = mod_battery_get_default_ctx(); /* Battery 默认上下文 */
+
+    char voltage_label[] = "voltage:";    /* 电压标题 */
+    char mode_label[] = "mode:";          /* 模式标题 */
+    char task_on[] = "task:ON";           /* ON 状态文本 */
+    char task_off[] = "task:OFF";         /* OFF 状态文本 */
+    char task_prepare[] = "task:PREP";    /* PREPARE 状态文本 */
+    char task_stop[] = "task:STOP";       /* STOP 状态文本 */
 
     (void)argument;
 
+    /* 等待 InitTask 完成模块绑定。 */
     task_wait_init_done();
 
+#if (TASK_OLED_STARTUP_ENABLE == 0U)
+    /* 启动开关关闭：挂起当前任务，避免刷新显示。 */
+    (void)osThreadSuspend(osThreadGetId());
+    for (;;)
+    {
+        osDelay(osWaitForever);
+    }
+#endif
+
+    /* 绑定 OLED I2C 通道并初始化屏幕。 */
     (void)OLED_BindI2C(&hi2c2, OLED_I2C_ADDR_DEFAULT, OLED_I2C_TIMEOUT_MS_DEFAULT);
-    (void)mod_battery_bind_adc(&hadc1);
 
     tick_freq = osKernelGetTickFreq();
     if (tick_freq == 0U)
@@ -73,24 +85,26 @@ void StartOledTask(void *argument)
         sample_period_tick = 1U;
     }
 
+    /* 步骤1：初始化 OLED 屏幕并读取一次上电电压。 */
     OLED_Init();
-    if (mod_battery_update())
+    if (mod_battery_update(battery_ctx))
     {
-        latest_voltage = mod_battery_get_voltage();
+        latest_voltage = mod_battery_get_voltage(battery_ctx);
     }
 
     next_oled_tick = osKernelGetTickCount();
     next_sample_tick = next_oled_tick + sample_period_tick;
 
-    for (;;) // 循环计数器
+    for (;;)
     {
-        uint32_t now_tick = osKernelGetTickCount(); // 当前系统 tick
+        uint32_t now_tick = osKernelGetTickCount(); /* 当前系统 tick */
 
+        /* 步骤2：到采样时基时刷新电压缓存。 */
         if (task_oled_time_reached(now_tick, next_sample_tick))
         {
-            if (mod_battery_update())
+            if (mod_battery_update(battery_ctx))
             {
-                latest_voltage = mod_battery_get_voltage();
+                latest_voltage = mod_battery_get_voltage(battery_ctx);
             }
 
             next_sample_tick += sample_period_tick;
@@ -100,6 +114,7 @@ void StartOledTask(void *argument)
             }
         }
 
+        /* 步骤3：到刷新时基时重绘页面。 */
         if (task_oled_time_reached(now_tick, next_oled_tick))
         {
             mode_value = task_dcc_get_mode();
@@ -137,9 +152,8 @@ void StartOledTask(void *argument)
             }
         }
 
+        /* 步骤4：空闲延时，避免任务空转占满 CPU。 */
         osDelay(TASK_OLED_IDLE_DELAY_TICK);
     }
 }
-
-
 

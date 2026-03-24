@@ -1,26 +1,28 @@
 ﻿/**
  * @file    task_gpio.c
- * @brief   GPIO 任务实现。
+ * @author  姜凯中
+ * @version v1.00
+ * @date    2026-03-24
+ * @brief   GPIO 反馈任务实现。
  * @details
- * 1. 文件作用：实现 GPIO 相关任务逻辑与外设状态控制。
- * 2. 上下层绑定：上层由任务调度层触发；下层调用 LED/继电器等模块接口。
+ * 1. 根据 DCC 运行状态输出灯效、蜂鸣器和激光继电器控制。
+ * 2. 消费 KeyTask 的反馈信号量，实现黄灯短闪与按键短鸣。
+ * 3. 统一蜂鸣器仲裁：最终输出 = STOP 节奏蜂鸣 OR 按键短鸣。
  */
+
 #include "task_gpio.h"
+
 #include "task_dcc.h"
 #include "task_init.h"
+
 #include <stdint.h>
 
-/* 毫秒转换为tick，向上取整且最小1 tick */
 /**
- * @brief 将毫秒时间换算为 RTOS tick，结果向上取整且至少为 1 tick。
- * @param duration_ms 目标时长（毫秒）。
- * @param tick_freq RTOS tick 频率（Hz），传入 0 时按 1000Hz 兜底。
- * @return 换算后的 tick 数。
+ * @brief 将毫秒换算为 RTOS tick（向上取整，最小 1 tick）。
  */
 static uint32_t task_gpio_ms_to_ticks(uint32_t duration_ms, uint32_t tick_freq)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
-    uint32_t ticks; // 换算后的 tick 计数
+    uint32_t ticks;
 
     if (tick_freq == 0U)
     {
@@ -36,67 +38,70 @@ static uint32_t task_gpio_ms_to_ticks(uint32_t duration_ms, uint32_t tick_freq)
     return ticks;
 }
 
-/* Tick比较：now是否已经到达target（支持回绕） */
 /**
- * @brief 判断当前 tick 是否达到目标 tick（支持计数回绕）。
- * @param now_tick 当前内核 tick。
- * @param target_tick 目标触发 tick。
- * @return 达到/超过目标返回 1，否则返回 0。
+ * @brief 判断当前 tick 是否已达到目标 tick（支持回绕）。
  */
 static int task_gpio_time_reached(uint32_t now_tick, uint32_t target_tick)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     return ((int32_t)(now_tick - target_tick) >= 0);
 }
 
-/* OFF/PREPARE统一清零输出，防止状态残留 */
 /**
- * @brief 关闭 GPIO 任务管理的状态灯输出。
- * @param 无。
- * @return 无。
+ * @brief 关闭状态灯（红灯与绿灯）。
  */
-static void task_gpio_outputs_off(void)
+static void task_gpio_outputs_off(mod_led_ctx_t *led_ctx)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
-    mod_led_off(LED_RED);
-    mod_led_off(LED_GREEN);
+    mod_led_off(led_ctx, LED_RED);
+    mod_led_off(led_ctx, LED_GREEN);
 }
 
 /**
- * @brief GPIO 任务主循环：处理按键反馈灯效、运行态灯效、蜂鸣器与激光继电器。
- * @param argument 任务参数（未使用）。
- * @return 无。
+ * @brief GPIO 反馈任务主循环。
+ * @param argument RTOS 任务参数（当前未使用）。
  */
 void StartGpioTask(void *argument)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
-    uint32_t tick_freq;                 /* RTOS tick 频率 */
-    uint32_t key_flash_ticks;           /* 黄灯短闪持续 tick */
-    uint32_t key_beep_ticks;            /* 按键短鸣持续 tick */
-    uint32_t green_blink_ticks;         /* ON 态绿灯闪烁周期 tick */
-    uint32_t red_blink_ticks;           /* STOP 态红灯闪烁周期 tick */
-    uint32_t buzzer_on_ticks;           /* STOP 态蜂鸣器响铃时长 tick */
-    uint32_t buzzer_off_ticks;          /* STOP 态蜂鸣器静默时长 tick */
+    uint32_t tick_freq;            /* RTOS tick 频率 */
+    uint32_t key_flash_ticks;      /* 黄灯短闪窗口（tick） */
+    uint32_t key_beep_ticks;       /* 按键短鸣窗口（tick） */
+    uint32_t green_blink_ticks;    /* ON 态绿灯闪烁周期（tick） */
+    uint32_t red_blink_ticks;      /* STOP 态红灯闪烁周期（tick） */
+    uint32_t buzzer_on_ticks;      /* STOP 态蜂鸣开窗口（tick） */
+    uint32_t buzzer_off_ticks;     /* STOP 态蜂鸣关窗口（tick） */
 
-    uint32_t now_tick;                  /* 当前系统 tick */
-    uint32_t key_flash_deadline = 0U;   /* 黄灯关闭时刻 */
-    uint32_t key_beep_deadline = 0U;    /* 按键短鸣结束时刻 */
-    uint32_t green_toggle_tick = 0U;    /* 绿灯下次翻转时刻 */
-    uint32_t red_toggle_tick = 0U;      /* 红灯下次翻转时刻 */
-    uint32_t buzzer_switch_tick = 0U;   /* 蜂鸣器下次相位切换时刻 */
+    uint32_t now_tick;             /* 当前系统 tick */
+    uint32_t key_flash_deadline = 0U; /* 黄灯短闪截止 tick */
+    uint32_t key_beep_deadline = 0U;  /* 按键短鸣截止 tick */
+    uint32_t green_toggle_tick = 0U;  /* 绿灯下一次翻转 tick */
+    uint32_t red_toggle_tick = 0U;    /* 红灯下一次翻转 tick */
+    uint32_t buzzer_switch_tick = 0U; /* 蜂鸣器下一次翻转 tick */
 
-    uint8_t run_state;                  /* DCC 当前运行状态 */
-    int key_flash_active = 0;           /* 黄灯短闪活动标志 */
-    int key_beep_active = 0;            /* 按键短鸣活动标志 */
-    int green_led_on = 0;               /* 绿灯逻辑输出状态 */
-    int red_led_on = 0;                 /* 红灯逻辑输出状态 */
-    int buzzer_on = 0;                  /* STOP 态蜂鸣节奏状态 */
-    int buzzer_output_on = 0;           /* 蜂鸣器继电器当前输出状态 */
-    int laser_output_on = 0;            /* 激光继电器当前输出状态 */
+    uint8_t run_state;             /* DCC 当前运行状态 */
+
+    int key_flash_active = 0;      /* 黄灯短闪窗口是否激活 */
+    int key_beep_active = 0;       /* 按键短鸣窗口是否激活 */
+    int green_led_on = 0;          /* 绿灯当前输出状态 */
+    int red_led_on = 0;            /* 红灯当前输出状态 */
+    int buzzer_on = 0;             /* STOP 节奏蜂鸣状态 */
+    int buzzer_output_on = 0;      /* 继电器蜂鸣器最终输出状态 */
+    int laser_output_on = 0;       /* 激光继电器当前输出状态 */
+
+    mod_led_ctx_t *led_ctx = mod_led_get_default_ctx();         /* LED 模块默认上下文 */
+    mod_relay_ctx_t *relay_ctx = mod_relay_get_default_ctx();   /* Relay 模块默认上下文 */
 
     (void)argument;
 
+    /* 等待 InitTask 完成映射装配与模块初始化。 */
     task_wait_init_done();
+
+#if (TASK_GPIO_STARTUP_ENABLE == 0U)
+    /* 启动开关关闭：挂起当前任务，避免输出链路被执行。 */
+    (void)osThreadSuspend(osThreadGetId());
+    for (;;)
+    {
+        osDelay(osWaitForever);
+    }
+#endif
 
     tick_freq = osKernelGetTickFreq();
     key_flash_ticks = task_gpio_ms_to_ticks(TASK_GPIO_KEY_FLASH_MS, tick_freq);
@@ -106,45 +111,47 @@ void StartGpioTask(void *argument)
     buzzer_on_ticks = task_gpio_ms_to_ticks(TASK_GPIO_STOP_BUZZER_ON_MS, tick_freq);
     buzzer_off_ticks = task_gpio_ms_to_ticks(TASK_GPIO_STOP_BUZZER_OFF_MS, tick_freq);
 
-    task_gpio_outputs_off();
-    mod_led_off(LED_YELLOW);
-    mod_relay_off(RELAY_BUZZER);
-    mod_relay_off(RELAY_LASER);
+    /* 上电默认输出安全态。 */
+    task_gpio_outputs_off(led_ctx);
+    mod_led_off(led_ctx, LED_YELLOW);
+    mod_relay_off(relay_ctx, RELAY_BUZZER);
+    mod_relay_off(relay_ctx, RELAY_LASER);
 
-    for (;;) // 循环计数器
+    for (;;)
     {
         now_tick = osKernelGetTickCount();
 
-        /* 任意按键事件：黄灯短闪 */
+        /* 1) 消费按键反馈事件：启动黄灯脉冲与短鸣窗口。 */
         if (osSemaphoreAcquire(Sem_RedLEDHandle, 0U) == osOK)
         {
             key_flash_active = 1;
             key_flash_deadline = now_tick + key_flash_ticks;
-            mod_led_on(LED_YELLOW);
+            mod_led_on(led_ctx, LED_YELLOW);
 
             key_beep_active = 1;
             key_beep_deadline = now_tick + key_beep_ticks;
         }
 
+        /* 2) 激光继电器仅在 DCC ON 态吸合。 */
         run_state = task_dcc_get_run_state();
         if ((run_state == TASK_DCC_RUN_ON) && (laser_output_on == 0))
         {
             laser_output_on = 1;
-            mod_relay_on(RELAY_LASER);
+            mod_relay_on(relay_ctx, RELAY_LASER);
         }
         else if ((run_state != TASK_DCC_RUN_ON) && (laser_output_on != 0))
         {
             laser_output_on = 0;
-            mod_relay_off(RELAY_LASER);
+            mod_relay_off(relay_ctx, RELAY_LASER);
         }
 
+        /* 3) 按 DCC 运行态驱动状态灯和 STOP 蜂鸣节奏。 */
         if (run_state == TASK_DCC_RUN_ON)
         {
-            /* ON态：绿灯持续闪烁，红灯/蜂鸣关闭 */
             if (red_led_on != 0)
             {
                 red_led_on = 0;
-                mod_led_off(LED_RED);
+                mod_led_off(led_ctx, LED_RED);
             }
             if (buzzer_on != 0)
             {
@@ -160,11 +167,11 @@ void StartGpioTask(void *argument)
                 green_led_on = !green_led_on;
                 if (green_led_on != 0)
                 {
-                    mod_led_on(LED_GREEN);
+                    mod_led_on(led_ctx, LED_GREEN);
                 }
                 else
                 {
-                    mod_led_off(LED_GREEN);
+                    mod_led_off(led_ctx, LED_GREEN);
                 }
 
                 green_toggle_tick += green_blink_ticks;
@@ -174,17 +181,15 @@ void StartGpioTask(void *argument)
                 }
             }
 
-            /* 离开STOP后，重置STOP节奏基准 */
             red_toggle_tick = 0U;
             buzzer_switch_tick = 0U;
         }
         else if (run_state == TASK_DCC_RUN_STOP)
         {
-            /* STOP态：红灯闪烁 + 蜂鸣器短响循环，绿灯关闭 */
             if (green_led_on != 0)
             {
                 green_led_on = 0;
-                mod_led_off(LED_GREEN);
+                mod_led_off(led_ctx, LED_GREEN);
             }
 
             if (red_toggle_tick == 0U)
@@ -196,11 +201,11 @@ void StartGpioTask(void *argument)
                 red_led_on = !red_led_on;
                 if (red_led_on != 0)
                 {
-                    mod_led_on(LED_RED);
+                    mod_led_on(led_ctx, LED_RED);
                 }
                 else
                 {
-                    mod_led_off(LED_RED);
+                    mod_led_off(led_ctx, LED_RED);
                 }
 
                 red_toggle_tick += red_blink_ticks;
@@ -236,13 +241,11 @@ void StartGpioTask(void *argument)
                 }
             }
 
-            /* 离开ON后，重置ON节奏基准 */
             green_toggle_tick = 0U;
         }
         else
         {
-            /* OFF/PREPARE：不输出绿灯/红灯/蜂鸣 */
-            task_gpio_outputs_off();
+            task_gpio_outputs_off(led_ctx);
             green_led_on = 0;
             red_led_on = 0;
             buzzer_on = 0;
@@ -251,29 +254,29 @@ void StartGpioTask(void *argument)
             buzzer_switch_tick = 0U;
         }
 
-        /* 黄灯脉冲超时关闭 */
+        /* 4) 黄灯脉冲到期关闭。 */
         if ((key_flash_active != 0) && task_gpio_time_reached(now_tick, key_flash_deadline))
         {
             key_flash_active = 0;
-            mod_led_off(LED_YELLOW);
+            mod_led_off(led_ctx, LED_YELLOW);
         }
 
-        /* 按键蜂鸣超时关闭 */
+        /* 5) 按键短鸣窗口到期关闭。 */
         if ((key_beep_active != 0) && task_gpio_time_reached(now_tick, key_beep_deadline))
         {
             key_beep_active = 0;
         }
 
-        /* 蜂鸣器输出 = STOP蜂鸣节奏 OR 按键短鸣 */
+        /* 6) 蜂鸣器仲裁：STOP 节奏蜂鸣 OR 按键短鸣。 */
         if ((buzzer_output_on == 0) && ((buzzer_on != 0) || (key_beep_active != 0)))
         {
             buzzer_output_on = 1;
-            mod_relay_on(RELAY_BUZZER);
+            mod_relay_on(relay_ctx, RELAY_BUZZER);
         }
         else if ((buzzer_output_on != 0) && (buzzer_on == 0) && (key_beep_active == 0))
         {
             buzzer_output_on = 0;
-            mod_relay_off(RELAY_BUZZER);
+            mod_relay_off(relay_ctx, RELAY_BUZZER);
         }
 
         osDelay(TASK_GPIO_PERIOD_MS);

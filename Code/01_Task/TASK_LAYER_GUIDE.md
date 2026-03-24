@@ -1,288 +1,241 @@
-# Task 层开发与维护详解
+﻿# Task 层开发与维护详解
 
 ## 文档元信息
 
 | 字段 | 内容 |
 | --- | --- |
-| 文档名称 | Task Layer Guide |
+| 文档名称 | TASK_LAYER_GUIDE |
 | 所在层 | `Code/01_Task` |
-| 作者 | 姜凯中（工程原作者） / Codex（文档整理与体系化说明） |
-| 版本 | v1.0.0 |
+| 作者 | 姜凯中 |
+| 版本 | v1.00 |
 | 最后更新 | 2026-03-24 |
 | 适用工程 | `FInal_graduate_work` |
-| 读者对象 | 新接手开发者、联调工程师、代码评审人员 |
+| 配置来源 | `Core/Src/freertos.c` + `Code/01_Task` |
 
 ---
 
 ## 1. 层定位与边界
 
-Task 层是工程的“业务编排层”。它不直接操作寄存器，也不直接写 HAL 细节，而是：
+Task 层是系统业务调度层，核心职责是把“输入事件、状态机、时序、模块调用”组织成稳定可维护的任务链路。
 
-1. 调度 Module 层接口形成业务闭环。
-2. 管理任务状态机与跨任务同步对象（信号量/互斥锁）。
-3. 承担“谁在什么时候调用哪个模块”的时序责任。
+Task 层负责：
 
-Task 层**不负责**：
+1. 任务生命周期组织（常驻任务与一次性初始化任务）。
+2. 跨任务同步资源消费与分发（信号量、互斥锁）。
+3. 业务状态机维护（DCC 模式与运行状态）。
+4. 调用 Module 层 API 形成完整业务流程。
 
-1. 具体硬件读写细节（归 Driver/Module）。
-2. 协议帧格式细节（归 Module）。
-3. 算法基础实现（归 Common/PID）。
+Task 层不负责：
 
----
-
-## 2. 启动路径与初始化时序
-
-系统启动关键链路如下：
-
-1. `main.c` 完成 HAL 与外设初始化（GPIO/DMA/UART/TIM/I2C/ADC）。
-2. `osKernelInitialize()` 后进入 `MX_FREERTOS_Init()`。
-3. `Core/Src/freertos.c` 创建所有任务与同步对象。
-4. `InitTask` 执行系统装配：
-   - 绑定 LED/继电器/电机/传感器硬件映射。
-   - 初始化模块。
-   - 绑定 VOFA、K230、Stepper 协议通道。
-   - 释放 `Sem_InitHandle` 并自删除。
-5. 其它任务调用 `task_wait_init_done()` 通过初始化闸门后进入主循环。
-
-设计价值：
-
-1. 避免多任务重复初始化硬件。
-2. 保证“先装配后运行”。
-3. 初始化失败不会拖垮整个调度器，任务可按绑定状态做降级。
+1. HAL 底层寄存器访问。
+2. Driver/Module 内部实现细节。
+3. 硬件映射定义（由 InitTask 绑定注入）。
 
 ---
 
-## 3. 任务总览（与 `freertos.c` 一致）
+## 2. 任务与资源总览
 
-| 任务名 | 入口函数 | 栈大小（字节） | 优先级 | 主要职责 |
-| --- | --- | ---: | --- | --- |
-| `defaultTask` | `StartDefaultTask` | 512 | `osPriorityLow` | 空闲保底任务，保障调度器常驻 |
-| `GpioTask` | `StartGpioTask` | 512 | `osPriorityLow` | LED/蜂鸣器/激光继电器反馈逻辑 |
-| `KeyTask` | `StartKeyTask` | 512 | `osPriorityLow` | 按键扫描并分发控制信号量 |
-| `OledTask` | `StartOledTask` | 512 | `osPriorityLow` | 电压与模式状态显示 |
-| `TestTask` | `StartTestTask` | 512 | `osPriorityHigh` | 调试预留任务 |
-| `StepperTask` | `StartStepperTask` | 4096 | `osPriorityRealtime` | 视觉误差闭环控制双轴步进 |
-| `DccTask` | `StartDccTask` | 2048 | `osPriorityRealtime` | 底盘 DCC 模式状态机与 PID 控制 |
-| `InitTask` | `StartInitTask` | 1024 | `osPriorityRealtime7` | 一次性装配与初始化闸门释放 |
+### 2.1 任务配置表（与 `freertos.c` 一致）
 
----
+| 任务名 | 入口函数 | 栈配置 | 栈字节 | 优先级 | 生命周期 | 主要职责 |
+| --- | --- | --- | ---: | --- | --- | --- |
+| `InitTask` | `StartInitTask` | `256*4` | `1024` | `osPriorityRealtime7` | 一次性 | 模块绑定、初始化、释放启动闸门 |
+| `StepperTask` | `StartStepperTask` | `1024*4` | `4096` | `osPriorityRealtime` | 常驻 | 双轴闭环控制、视觉帧消费、状态上报 |
+| `DccTask` | `StartDccTask` | `512*4` | `2048` | `osPriorityRealtime` | 常驻 | DCC 状态机与底盘控制 |
+| `TestTask` | `StartTestTask` | `128*4` | `512` | `osPriorityHigh` | 常驻 | 测试预留任务 |
+| `defaultTask` | `StartDefaultTask` | `128*4` | `512` | `osPriorityLow` | 常驻 | 保底空转任务 |
+| `GpioTask` | `StartGpioTask` | `128*4` | `512` | `osPriorityLow` | 常驻 | 灯光/蜂鸣/激光输出仲裁 |
+| `KeyTask` | `StartKeyTask` | `128*4` | `512` | `osPriorityLow` | 常驻 | 按键扫描与事件分发 |
+| `OledTask` | `StartOledTask` | `128*4` | `512` | `osPriorityLow` | 常驻 | 页面刷新与状态显示 |
 
-## 4. 同步资源与职责分配
+### 2.2 同步资源表
 
-| 资源名 | 类型 | 生产者 | 消费者 | 作用 |
-| --- | --- | --- | --- | --- |
-| `Sem_InitHandle` | 二值信号量 | `InitTask` | 所有业务任务 | 初始化闸门 |
-| `Sem_RedLEDHandle` | 二值信号量 | `KeyTask` | `GpioTask` | 任意按键反馈（黄灯+短鸣） |
-| `Sem_DccHandle` | 二值信号量 | `KeyTask` | `DccTask` | KEY2 单击：DCC 全重置 |
-| `Sem_TaskChangeHandle` | 二值信号量 | `KeyTask` | `DccTask` | KEY3 单击：模式切换 |
-| `Sem_ReadyToggleHandle` | 二值信号量 | `KeyTask` | `DccTask` | KEY3 双击：OFF/PREPARE/ON 切换 |
-| `PcMutexHandle` | 互斥锁 | `freertos.c` 创建 | VOFA/K230/Stepper 发送路径 | 共享串口发送互斥 |
-
-详细任务资源映射见：
-
-- [TASK_RESOURCE_MAP.md](/E:/STM32_CODE_WORK/gradute_work/FInal_graduate_work/Code/01_Task/TASK_RESOURCE_MAP.md)
+| 资源名 | 类型 | 初始值 | 生产者 | 消费者 | 作用 |
+| --- | --- | ---: | --- | --- | --- |
+| `Sem_InitHandle` | Semaphore | `0` | `InitTask` | 所有业务任务（`task_wait_init_done`） | 系统初始化闸门 |
+| `Sem_RedLEDHandle` | Semaphore | `0` | `KeyTask` | `GpioTask` | 按键反馈灯/蜂鸣触发 |
+| `Sem_DccHandle` | Semaphore | `0` | `KeyTask` | `DccTask` | KEY2 触发 DCC 全重置 |
+| `Sem_TaskChangeHandle` | Semaphore | `0` | `KeyTask` | `DccTask` | KEY3 单击切换 DCC 模式 |
+| `Sem_ReadyToggleHandle` | Semaphore | `0` | `KeyTask` | `DccTask` | KEY3 双击切换 DCC 运行态 |
+| `PcMutexHandle` | Mutex | N/A | InitTask 注入到模块 | 串口发送相关模块 | 串口发送互斥（避免并发冲突） |
 
 ---
 
-## 5. 逐任务详解
+## 3. 系统启动时序
 
-## 5.1 `InitTask`（系统装配任务）
+1. RTOS 创建互斥锁、信号量和全部线程。
+2. `InitTask` 最先执行，完成模块绑定与初始化。
+3. `InitTask` 完成后释放 `Sem_InitHandle`。
+4. 各业务任务在主循环前调用 `task_wait_init_done()` 通过闸门。
+5. `InitTask` 执行 `osThreadTerminate` 自删除，避免重复初始化。
 
-核心工作：
+该机制保证“初始化先于业务运行”，避免任务抢跑访问未绑定资源。
 
-1. 静态绑定表注入：`mod_led/mod_relay/mod_motor/mod_sensor`。
-2. 模块初始化：LED、继电器、按键、电机、传感器。
-3. 协议上下文绑定：
-   - VOFA -> `huart3` + `PcMutexHandle`
-   - K230 -> `huart4`
-   - Stepper 双轴 -> `huart5`（X）+ `huart2`（Y）
-4. 释放 `Sem_InitHandle`，然后 `osThreadTerminate` 自删除。
+---
 
-解耦点：
+## 4. 任务调用链
 
-1. 业务任务不持有硬件绑定细节。
-2. Task 运行期只消费“已绑定上下文”，不关心谁创建。
+1. 输入链路：`KeyTask -> mod_key_scan -> 信号量分发`。
+2. 底盘链路：`DccTask -> mod_motor + mod_sensor + PID`。
+3. 视觉链路：`StepperTask -> mod_k230 -> mod_stepper`。
+4. 输出链路：`GpioTask -> mod_led + mod_relay`。
+5. 显示链路：`OledTask -> mod_battery + mod_oled`。
 
-扩展建议：
+---
 
-1. 新增模块时优先在本任务做 bind/init 注入。
-2. 若模块初始化可能失败，保留返回码并在状态页输出绑定状态。
+## 5. 文件级说明
 
-## 5.2 `KeyTask`（输入事件源）
+### 5.1 `task_init.c`
 
-核心工作：
+职责：
 
-1. `mod_key_scan()` 周期扫描事件。
-2. 所有有效按键先统一释放 `Sem_RedLEDHandle` 做反馈。
-3. 再将特定事件映射到 DCC 控制信号量。
+1. 维护全局模块绑定表与默认上下文注入。
+2. 顺序执行模块初始化并写入上电安全态。
+3. 绑定通信相关通道并释放 `Sem_InitHandle`。
 
-映射规则：
+维护要点：
 
-1. KEY2 单击 -> `Sem_DccHandle`
-2. KEY3 单击 -> `Sem_TaskChangeHandle`
-3. KEY3 双击 -> `Sem_ReadyToggleHandle`
+1. 新模块必须遵循“先 bind，后 init”。
+2. 初始化失败处理不能破坏启动闸门策略。
+3. 该任务应保持一次性，不承载运行期业务逻辑。
 
-解耦点：
+### 5.2 `task_key.c`
 
-1. 按键任务只发事件，不直接改 DCC 状态机。
-2. 任务间通过信号量通信，避免直接函数耦合。
+职责：
 
-## 5.3 `DccTask`（底盘主状态机）
+1. 周期扫描按键模块输出事件。
+2. 将事件映射为业务信号量。
+3. 对任意有效事件释放 `Sem_RedLEDHandle` 触发反馈。
+
+事件映射：
+
+1. `MOD_KEY_EVENT_2_CLICK -> Sem_DccHandle`。
+2. `MOD_KEY_EVENT_3_CLICK -> Sem_TaskChangeHandle`。
+3. `MOD_KEY_EVENT_3_DOUBLE_CLICK -> Sem_ReadyToggleHandle`。
+
+### 5.3 `task_dcc.c`
+
+职责：
+
+1. DCC 状态机唯一写入者。
+2. 消费按键信号量并驱动状态转移。
+3. 在 ON 态按模式执行控制分支。
 
 核心状态：
 
-1. 模式：`IDLE/STRAIGHT/TRACK`
-2. 运行态：`OFF/PREPARE/ON/STOP`
+1. 模式：`IDLE/STRAIGHT/TRACK`。
+2. 运行态：`OFF/PREPARE/ON/STOP`。
 
-控制路径：
+维护要点：
 
-1. `STRAIGHT`：位置环 + 双速度环，含 1 秒传感器保护窗。
-2. `TRACK`：按传感器权重分配双轮目标速度。
-3. `STOP`：保护停机并回 `IDLE`。
+1. 新增状态必须保持“单写入者”规则。
+2. 保护逻辑建议封装为静态函数，避免主循环膨胀。
 
-对外接口：
-
-1. `task_dcc_get_mode()`
-2. `task_dcc_get_run_state()`
-3. `task_dcc_get_ready()`
-
-解耦点：
-
-1. 对外只暴露只读查询，不暴露写接口。
-2. 控制执行只通过 `mod_motor/mod_sensor` 抽象完成。
-
-## 5.4 `GpioTask`（反馈执行任务）
+### 5.4 `task_stepper.c`
 
 职责：
 
-1. 消费 `Sem_RedLEDHandle` 做短时黄灯/蜂鸣反馈。
-2. 读取 `task_dcc_get_run_state()` 决定：
-   - ON：绿灯闪烁、激光开启。
-   - STOP：红灯闪烁、蜂鸣节奏告警。
-   - OFF/PREPARE：关闭状态输出。
+1. 双轴步进控制任务。
+2. 消费视觉帧误差并分发到 X/Y 轴。
+3. 执行死区、限位、丢帧容错与停机保护。
 
-解耦点：
+维护要点：
 
-1. 只读 DCC 状态，不改 DCC 状态。
-2. 仅调用 `mod_led/mod_relay`，不触及底层 GPIO 细节。
+1. 新增轴需同步扩展状态快照与上报字段。
+2. 限位参数调整必须与机械行程实测一致。
 
-## 5.5 `StepperTask`（视觉闭环任务）
+### 5.5 `task_gpio.c`
 
 职责：
 
-1. 轮询 `mod_k230_get_latest_frame()` 获取误差帧。
-2. 按 DCC 模式执行位置控制与丢帧容错。
-3. 通过 `mod_stepper_position/stop` 下发协议命令。
-4. 通过 `mod_vofa_send_float_ctx()` 上报调试数据。
+1. 统一仲裁黄灯、红绿灯、蜂鸣器、激光继电器输出。
+2. 根据 DCC 运行态执行灯效与蜂鸣节奏。
+3. 消费 `Sem_RedLEDHandle` 提供按键反馈。
 
-关键保护：
+维护要点：
 
-1. 连续无新帧达到阈值后保护停机。
-2. 软限位保护 `X/Y` 轴。
-3. 小误差区 Kp-only，抑制积分抖动。
+1. 所有灯光/蜂鸣策略应集中在本任务，避免跨任务直接写 GPIO。
 
-解耦点：
-
-1. 视觉协议、步进协议、上报协议都在 Module 层。
-2. Task 只做控制策略，不做协议拼帧。
-
-## 5.6 `OledTask`（显示任务）
+### 5.6 `task_oled.c`
 
 职责：
 
-1. 周期更新电池电压缓存。
-2. 周期读取 DCC 模式与运行态并刷新页面。
-3. 页面内容写入通过 `OLED_*` 接口完成。
+1. 周期采样电压并缓存。
+2. 周期刷新 OLED 页面。
+3. 显示 DCC 模式与运行状态。
 
-解耦点：
+维护要点：
 
-1. 显示任务不参与控制决策。
-2. 电压数据来源于 `mod_battery`，显示通道来源于 `mod_oled`。
+1. 保持采样周期与刷新周期解耦，减少无效 I2C 压力。
 
-## 5.7 `TestTask`（调试预留）
-
-职责：
-
-1. 当前默认空转延时，保留调试模板。
-2. 可按需临时启用 VOFA 或传感器联调代码。
-
-维护建议：
-
-1. 调试完成后恢复空转，避免污染正式控制链路。
-2. 不把关键业务逻辑长期放在本任务。
-
-## 5.8 `defaultTask`
+### 5.7 `task_test.c`
 
 职责：
 
-1. 调用 `task_wait_init_done()` 后保持最小调度负载。
-2. 作为系统保底线程存在。
+1. 预留联调任务。
+2. 默认空转，不进入正式业务链路。
+
+维护要点：
+
+1. 临时测试逻辑必须可快速回退并恢复默认空转。
 
 ---
 
-## 6. Task 层解耦设计模式
+## 6. Task 层开关配置
 
-## 6.1 模式一：初始化闸门
+### 6.1 任务启动开关（除 `InitTask` 外）
 
-1. `InitTask` 负责“一次性装配”。
-2. 其它任务统一调用 `task_wait_init_done()`。
-3. 闸门通过后保持常开，后续任务快速通过。
+| 任务 | 宏名 | 默认值 | 说明 |
+| --- | --- | ---: | --- |
+| DccTask | `TASK_DCC_STARTUP_ENABLE` | `1` | `0` 时任务启动后挂起 |
+| StepperTask | `TASK_STEPPER_STARTUP_ENABLE` | `1` | `0` 时任务启动后挂起 |
+| GpioTask | `TASK_GPIO_STARTUP_ENABLE` | `1` | `0` 时任务启动后挂起 |
+| KeyTask | `TASK_KEY_STARTUP_ENABLE` | `1` | `0` 时任务启动后挂起 |
+| OledTask | `TASK_OLED_STARTUP_ENABLE` | `1` | `0` 时任务启动后挂起 |
+| TestTask | `TASK_TEST_STARTUP_ENABLE` | `1` | `0` 时任务启动后挂起 |
 
-## 6.2 模式二：事件信号量解耦
+### 6.2 VOFA 上报开关
 
-1. 输入任务（Key）只投递信号量。
-2. 业务任务（Dcc/Gpio）各自消费并处理。
-3. 避免“输入层直接写业务状态”带来的强耦合。
-
-## 6.3 模式三：状态只读接口
-
-1. 共享状态通过 `task_dcc_get_*` 提供。
-2. 外部任务禁止写入 DCC 内部状态变量。
-3. 降低跨任务竞态风险。
-
----
-
-## 7. 扩展开发指南（Task 层）
-
-新增任务建议步骤：
-
-1. 在 `freertos.c` 新建线程属性（栈、优先级、入口）。
-2. 在 `Code/01_Task/Inc` 增加头文件并声明入口。
-3. 在 `Code/01_Task/Src` 实现任务逻辑并先调用 `task_wait_init_done()`。
-4. 若需跨任务通信，优先新增信号量而非直接互调。
-5. 更新 `TASK_RESOURCE_MAP.md` 与本说明文档。
-
-调参建议：
-
-1. 周期参数优先在头文件宏集中管理。
-2. PID 参数改动需保留“默认值 + 场景说明”。
-3. 调参后做最小回归：启动、按键、模式切换、保护停机。
+| 任务 | 宏名 | 默认值 | 说明 |
+| --- | --- | ---: | --- |
+| DccTask | `TASK_DCC_VOFA_ENABLE` | `0` | 控制 DCC 状态数据上报 |
+| StepperTask | `TASK_STEPPER_VOFA_ENABLE` | `1` | 控制步进误差数据上报 |
 
 ---
 
-## 8. 维护与排障清单
+## 7. 代码风格与注释规范（Task 层）
 
-日常维护检查：
-
-1. 所有任务是否都通过初始化闸门。
-2. 信号量是否存在“生产者释放但无消费者”。
-3. 高优先级任务是否存在过长阻塞调用。
-4. 状态机分支是否覆盖异常输入。
-
-常见问题定位：
-
-1. 任务不运行：先查 `Sem_InitHandle` 是否释放。
-2. 按键无效：查 `KeyTask` 扫描周期与 `mod_key` 配置是否一致。
-3. 底盘不转：查 DCC 运行态是否进入 `ON`，再查 `mod_motor` 绑定。
-4. 步进无动作：查 K230 帧更新计数、轴绑定状态、UART 归属冲突。
-5. 无上报：查 VOFA 绑定、互斥锁、串口状态是否空闲。
+1. 文件头统一包含：`@file/@author/@version/@date/@brief/@details`。
+2. 对外接口函数必须写明参数与返回语义。
+3. 关键静态函数必须写明输入、判定、输出与副作用。
+4. 关键变量注明单位和用途（ms/tick/pulse/rpm）。
+5. 状态机和保护逻辑必须有步骤注释。
 
 ---
 
-## 9. 版本管理建议
+## 8. 扩展指南
 
-建议在后续维护中遵循：
+1. 新增任务：先在 `freertos.c` 创建线程与资源，再补 `task_xxx.h/.c`。
+2. 新增任务必须调用 `task_wait_init_done()` 进行启动闸门同步。
+3. 新增同步资源后必须回填本文件资源总表。
+4. 新增 DCC/Stepper 模式时，同步更新 OLED 页面和本文件说明。
 
-1. Task 层接口变更必须同步更新本文件和 `TASK_RESOURCE_MAP.md`。
-2. 每次新增任务或同步资源时，更新“任务总览表”和“同步资源表”。
-3. 与 Module/Driver 的边界调整必须注明“谁上移/谁下移”与原因。
+---
+
+## 9. 维护与回归检查清单
+
+1. 是否仍保持 Init 闸门先于业务主循环。
+2. 是否保持 DCC 状态机单写入者。
+3. 是否出现跨任务直接操作硬件输出的新增路径。
+4. 是否新增未文档化的信号量/互斥锁。
+5. 是否修改控制周期后未评估实时性与栈占用。
+
+---
+
+## 10. 版本记录
+
+### v1.00
+
+1. 建立 Task 层单文档详解手册。
+2. 补齐任务栈、优先级、同步资源和调用链说明。
+3. 补齐任务开关与 VOFA 开关统一说明。

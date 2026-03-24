@@ -1,8 +1,8 @@
 ﻿/**
  * @file    drv_key.h
  * @author  姜凯中
- * @version v1.0.0
- * @date    2026-03-23
+ * @version v1.00
+ * @date    2026-03-24
  * @brief   通用按键驱动接口（驱动层不绑定任何具体引脚）。
  * @details
  * 1. 文件作用：提供可复用的按键时序状态机，输出消抖后的单击/双击/长按事件。
@@ -88,3 +88,4 @@ bool drv_key_init(const drv_key_cfg_t *cfg);
 bool drv_key_scan(drv_key_event_t *out_event);
 
 #endif /* FINAL_GRADUATE_WORK_DRV_KEY_H */
+

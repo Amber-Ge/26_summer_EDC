@@ -1,14 +1,16 @@
 ﻿/**
  * @file    task_test.h
+ * @author  姜凯中
+ * @version v1.00
+ * @date    2026-03-24
  * @brief   测试任务接口声明。
  * @details
- * 1. 文件作用：定义测试任务节拍参数并声明调试任务入口。
- * 2. 上层绑定：由 RTOS 创建并调度，主要用于联调阶段临时验证。
- * 3. 下层依赖：可按需调用 VOFA/传感器/电机等模块接口，不承载正式业务链路。
- * 4. 生命周期：默认常驻但低活跃度，保留为可开关的调试扩展点。
+ * 1. TestTask 用于联调阶段的实验性验证，不承载正式业务闭环。
+ * 2. 头文件保留常用测试周期与目标参数，便于快速启用测试片段。
+ * 3. 所有测试逻辑均应可关闭，避免影响正式任务链路。
  */
-#ifndef FINAL_GRADUATE_WORK_TASK_CONTROL_H
-#define FINAL_GRADUATE_WORK_TASK_CONTROL_H
+#ifndef FINAL_GRADUATE_WORK_TASK_TEST_H
+#define FINAL_GRADUATE_WORK_TASK_TEST_H
 
 #include "cmsis_os.h"
 #include "mod_motor.h"
@@ -18,11 +20,20 @@
 #include "pid_config.h"
 #include "pid_inc.h"
 
-#define TASK_TEST_PERIOD_MS    (1000000U)  // 测试任务循环周期（ms）
-#define TASK_TEST_PREPARE_MS   (5000U)     // 预留：测试启动前准备时间（ms）
-#define TASK_TEST_TARGET_SPEED (40)     // 预留：测试默认目标速度
+/* 测试任务循环周期（毫秒） */
+#define TASK_TEST_PERIOD_MS (1000000U)
+/* Test 任务启动开关：1=正常运行，0=启动后挂起 */
+#define TASK_TEST_STARTUP_ENABLE (1U)
+/* 预留：测试启动前准备时间（毫秒） */
+#define TASK_TEST_PREPARE_MS (5000U)
+/* 预留：测试默认目标速度 */
+#define TASK_TEST_TARGET_SPEED (40)
 
+/**
+ * @brief 测试任务入口。
+ * @param argument RTOS 任务参数（当前未使用）。
+ */
 void StartTestTask(void *argument);
 
-#endif /* FINAL_GRADUATE_WORK_TASK_CONTROL_H */
+#endif /* FINAL_GRADUATE_WORK_TASK_TEST_H */
 

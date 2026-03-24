@@ -1,45 +1,41 @@
 ﻿/**
  * @file    task_init.c
+ * @author  姜凯中
+ * @version v1.00
+ * @date    2026-03-24
  * @brief   系统初始化任务实现。
  * @details
- * 1. 文件作用：实现系统资源初始化与任务启动编排。
- * 2. 上下层绑定：上层由系统启动流程调用；下层依赖各模块初始化接口。
+ * 1. InitTask 负责一次性完成模块绑定、初始化和上电安全态设置。
+ * 2. 业务任务通过 task_wait_init_done 与初始化时序解耦。
+ * 3. 初始化完成后释放 Sem_InitHandle 并自删除，避免重复执行。
  */
+
 #include "task_init.h"
 
 #include "main.h"
+#include "adc.h"
 #include "tim.h"
 #include "usart.h"
+
+#include "mod_battery.h"
+#include "mod_k230.h"
 #include "mod_key.h"
 #include "mod_led.h"
 #include "mod_motor.h"
 #include "mod_relay.h"
 #include "mod_sensor.h"
 #include "mod_vofa.h"
-#include "mod_k230.h"
+
 #include "task_stepper.h"
+
 #include <string.h>
 
-/**
- * @brief freertos.c 中创建的初始化门控信号量。
- *
- * @details
- * Sem_Init 作为系统“初始化完成闸门”使用：
- * 1. 初始计数为 0，所有业务任务在 task_wait_init_done() 阻塞。
- * 2. InitTask 全部初始化完成后释放一次。
- * 3. 首个通过者会再释放一次，使该闸门保持常开。
- */
-extern osSemaphoreId_t Sem_InitHandle; // RTOS 信号量句柄，用于任务同步。
+/* 初始化闸门信号量：InitTask 释放，其他任务等待 */
+extern osSemaphoreId_t Sem_InitHandle;
+/* 串口发送互斥锁：VOFA/Stepper 绑定时注入 */
+extern osMutexId_t PcMutexHandle;
 
-/**
- * @brief freertos.c 中创建的串口发送互斥锁。
- *
- * @details
- * DCC/Stepper 等任务都可能调用 VOFA 发送接口，需要共享此互斥锁保护 DMA 发送。
- */
-extern osMutexId_t PcMutexHandle; // 串口打印互斥锁句柄，避免并发输出冲突。
-
-/* ========================= 硬件绑定表：LED ========================= */
+/* ========================= GPIO 分支：LED 绑定表 ========================= */
 static const mod_led_hw_cfg_t s_led_bind_map[LED_MAX] =
 {
     [LED_RED] = {
@@ -59,7 +55,7 @@ static const mod_led_hw_cfg_t s_led_bind_map[LED_MAX] =
     },
 };
 
-/* ========================= 硬件绑定表：继电器 ========================= */
+/* ========================= GPIO 分支：继电器绑定表 ========================= */
 static const mod_relay_hw_cfg_t s_relay_bind_map[RELAY_MAX] =
 {
     [RELAY_LASER] = {
@@ -74,7 +70,37 @@ static const mod_relay_hw_cfg_t s_relay_bind_map[RELAY_MAX] =
     },
 };
 
-/* ========================= 硬件绑定表：底盘双电机 ========================= */
+/* ========================= GPIO 分支：按键绑定表 ========================= */
+#define TASK_INIT_KEY_NUM (3U)
+static const mod_key_hw_cfg_t s_key_bind_map[TASK_INIT_KEY_NUM] =
+{
+    [0] = {
+        .port = KEY_1_GPIO_Port,
+        .pin = KEY_1_Pin,
+        .active_level = GPIO_LEVEL_LOW,
+        .click_event = MOD_KEY_EVENT_1_CLICK,
+        .double_event = MOD_KEY_EVENT_1_DOUBLE_CLICK,
+        .long_event = MOD_KEY_EVENT_1_LONG_PRESS,
+    },
+    [1] = {
+        .port = KEY_2_GPIO_Port,
+        .pin = KEY_2_Pin,
+        .active_level = GPIO_LEVEL_LOW,
+        .click_event = MOD_KEY_EVENT_2_CLICK,
+        .double_event = MOD_KEY_EVENT_2_DOUBLE_CLICK,
+        .long_event = MOD_KEY_EVENT_2_LONG_PRESS,
+    },
+    [2] = {
+        .port = KEY_3_GPIO_Port,
+        .pin = KEY_3_Pin,
+        .active_level = GPIO_LEVEL_LOW,
+        .click_event = MOD_KEY_EVENT_3_CLICK,
+        .double_event = MOD_KEY_EVENT_3_DOUBLE_CLICK,
+        .long_event = MOD_KEY_EVENT_3_LONG_PRESS,
+    },
+};
+
+/* ========================= 电机绑定表 ========================= */
 static const mod_motor_hw_cfg_t s_motor_bind_map[MOD_MOTOR_MAX] =
 {
     [MOD_MOTOR_LEFT] = {
@@ -103,8 +129,7 @@ static const mod_motor_hw_cfg_t s_motor_bind_map[MOD_MOTOR_MAX] =
     },
 };
 
-/* ========================= 硬件绑定表：12 路循迹传感器 ========================= */
-/* 第3列 line_level：该路读取到该电平时判定“检测到黑线（输出1）” */
+/* ========================= 12 路循迹传感器绑定表 ========================= */
 static const mod_sensor_map_item_t s_sensor_bind_map[MOD_SENSOR_CHANNEL_NUM] =
 {
     {GPIOG, GPIO_PIN_0, GPIO_LEVEL_HIGH, 0.60f},
@@ -122,62 +147,85 @@ static const mod_sensor_map_item_t s_sensor_bind_map[MOD_SENSOR_CHANNEL_NUM] =
 };
 
 /**
- * @brief 注入 LED/继电器/电机/循迹传感器的静态硬件映射表。
- * @param 无。
- * @return 无。
+ * @brief 按配置表绑定默认模块上下文。
+ * @details
+ * 该函数只做“配置注入”，不执行硬件动作。
  */
 static void task_init_bind_map(void)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
-    (void)mod_led_bind_map(s_led_bind_map, LED_MAX);
-    (void)mod_relay_bind_map(s_relay_bind_map, RELAY_MAX);
-    (void)mod_motor_bind_map(s_motor_bind_map, MOD_MOTOR_MAX);
-    (void)mod_sensor_bind_map(s_sensor_bind_map, MOD_SENSOR_CHANNEL_NUM);
+    mod_led_ctx_t *led_ctx = mod_led_get_default_ctx();             /* LED 默认上下文 */
+    mod_relay_ctx_t *relay_ctx = mod_relay_get_default_ctx();       /* Relay 默认上下文 */
+    mod_sensor_ctx_t *sensor_ctx = mod_sensor_get_default_ctx();     /* Sensor 默认上下文 */
+    mod_key_ctx_t *key_ctx = mod_key_get_default_ctx();              /* Key 默认上下文 */
+    mod_motor_ctx_t *motor_ctx = mod_motor_get_default_ctx();        /* Motor 默认上下文 */
+    mod_battery_ctx_t *battery_ctx = mod_battery_get_default_ctx();  /* Battery 默认上下文 */
+
+    mod_led_bind_t led_bind;            /* LED 绑定参数 */
+    mod_relay_bind_t relay_bind;        /* Relay 绑定参数 */
+    mod_sensor_bind_t sensor_bind;      /* Sensor 绑定参数 */
+    mod_key_bind_t key_bind;            /* Key 绑定参数 */
+    mod_motor_bind_t motor_bind;        /* Motor 绑定参数 */
+    mod_battery_bind_t battery_bind;    /* Battery 绑定参数 */
+
+    led_bind.map = s_led_bind_map;
+    led_bind.map_num = LED_MAX;
+    (void)mod_led_ctx_init(led_ctx, &led_bind);
+
+    relay_bind.map = s_relay_bind_map;
+    relay_bind.map_num = RELAY_MAX;
+    (void)mod_relay_ctx_init(relay_ctx, &relay_bind);
+
+    sensor_bind.map = s_sensor_bind_map;
+    sensor_bind.map_num = MOD_SENSOR_CHANNEL_NUM;
+    (void)mod_sensor_ctx_init(sensor_ctx, &sensor_bind);
+
+    key_bind.map = s_key_bind_map;
+    key_bind.key_num = TASK_INIT_KEY_NUM;
+    (void)mod_key_ctx_init(key_ctx, &key_bind);
+
+    motor_bind.map = s_motor_bind_map;
+    motor_bind.map_num = MOD_MOTOR_MAX;
+    (void)mod_motor_ctx_init(motor_ctx, &motor_bind);
+
+    battery_bind.hadc = &hadc1;
+    battery_bind.adc_ref_v = MOD_BATTERY_DEFAULT_ADC_REF_V;
+    battery_bind.adc_res = MOD_BATTERY_DEFAULT_ADC_RES;
+    battery_bind.voltage_ratio = MOD_BATTERY_DEFAULT_VOL_RATIO;
+    battery_bind.sample_cnt = MOD_BATTERY_DEFAULT_SAMPLE_CNT;
+    (void)mod_battery_ctx_init(battery_ctx, &battery_bind);
 }
 
 /**
- * @brief 执行基础模块初始化并设置上电安全状态。
- * @param 无。
- * @return 无。
+ * @brief 执行基础模块初始化并写入上电安全状态。
  */
 static void task_init_modules(void)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
-    mod_led_Init();
-    mod_relay_init();
-    mod_relay_off(RELAY_LASER);
-    mod_key_init();
+    mod_led_ctx_t *led_ctx = mod_led_get_default_ctx();         /* LED 默认上下文 */
+    mod_relay_ctx_t *relay_ctx = mod_relay_get_default_ctx();   /* Relay 默认上下文 */
+    mod_sensor_ctx_t *sensor_ctx = mod_sensor_get_default_ctx(); /* Sensor 默认上下文 */
+    mod_motor_ctx_t *motor_ctx = mod_motor_get_default_ctx();   /* Motor 默认上下文 */
 
-    mod_motor_init();
-    mod_sensor_init();
-    mod_motor_set_mode(MOD_MOTOR_LEFT, MOTOR_MODE_DRIVE);
-    mod_motor_set_mode(MOD_MOTOR_RIGHT, MOTOR_MODE_DRIVE);
+    mod_led_init(led_ctx);
+    mod_relay_init(relay_ctx);
+    mod_sensor_init(sensor_ctx);
+
+    /* 上电默认关闭激光继电器。 */
+    mod_relay_off(relay_ctx, RELAY_LASER);
+
+    mod_motor_init(motor_ctx);
+    mod_motor_set_mode(motor_ctx, MOD_MOTOR_LEFT, MOTOR_MODE_DRIVE);
+    mod_motor_set_mode(motor_ctx, MOD_MOTOR_RIGHT, MOTOR_MODE_DRIVE);
 }
 
 /**
- * @brief 在 InitTask 中完成 VOFA + 串口绑定。
- *
- * @details
- * 本项目不再使用 PC 任务中的 start/stop 命令处理逻辑，但仍需要 VOFA 输出数据。
- * 因此这里在系统初始化阶段直接绑定：
- * 1. 串口：USART3（huart3）。
- * 2. 互斥锁：PcMutexHandle（用于多任务发送保护）。
- * 3. 信号量列表：留空（sem_count = 0），即不再消费命令事件。
- */
-/**
- * @brief 绑定或重绑定 VOFA 默认上下文到 `huart3` 与发送互斥锁。
- * @param 无。
- * @return 无。
+ * @brief 绑定或重绑定 VOFA 默认上下文。
  */
 static void task_init_vofa_bind(void)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
-    mod_vofa_ctx_t *vofa_ctx; // VOFA 默认上下文
-    mod_vofa_bind_t vofa_bind; // VOFA 资源绑定配置
+    mod_vofa_ctx_t *vofa_ctx = mod_vofa_get_default_ctx(); /* VOFA 默认上下文 */
+    mod_vofa_bind_t vofa_bind;                              /* VOFA 绑定参数 */
 
-    vofa_ctx = mod_vofa_get_default_ctx();
     memset(&vofa_bind, 0, sizeof(vofa_bind));
-
     vofa_bind.huart = &huart3;
     vofa_bind.tx_mutex = PcMutexHandle;
     vofa_bind.sem_count = 0U;
@@ -193,40 +241,14 @@ static void task_init_vofa_bind(void)
 }
 
 /**
- * @brief 在 InitTask 中完成 K230 协议层与串口资源绑定。
- *
- * @details
- * 设计说明（与当前“解耦版 mod_k230”接口保持一致）：
- * 1. 本函数只负责“装配（bind）”，不写入任何业务逻辑。
- * 2. K230 采用 ctx + bind 模型，InitTask 作为系统装配层注入硬件资源。
- * 3. 绑定信息包括：
- *    - UART：huart4（当前工程中 VOFA 使用 huart3，Stepper 使用 huart5/huart2，
- *      因此此处选用未占用的 huart4，避免 UART ownership 冲突）。
- *    - 校验算法：MOD_K230_CHECKSUM_XOR（当前模块唯一已实现算法）。
- *    - 通知信号量：不绑定（sem_count = 0），后续若有消费者任务可再动态追加。
- *    - 发送互斥锁：不绑定（tx_mutex = NULL），保持最小耦合。
- *
- * 4. 初始化策略与 VOFA 保持一致：
- *    - 若默认 ctx 尚未 init，则执行 ctx_init(ctx, &bind)；
- *    - 若已 init，则执行 rebind(ctx, &bind)。
- *
- * 5. 无论绑定成功与否，InitTask 都继续执行后续流程，不在这里阻塞系统启动。
- *    错误处理由模块内部“返回值 + 资源回滚”保证安全性。
- */
-/**
- * @brief 绑定或重绑定 K230 默认上下文到 `huart4`。
- * @param 无。
- * @return 无。
+ * @brief 绑定或重绑定 K230 默认上下文。
  */
 static void task_init_k230_bind(void)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
-    mod_k230_ctx_t *k230_ctx; // K230 默认上下文
-    mod_k230_bind_t k230_bind; // K230 资源绑定配置
+    mod_k230_ctx_t *k230_ctx = mod_k230_get_default_ctx(); /* K230 默认上下文 */
+    mod_k230_bind_t k230_bind;                              /* K230 绑定参数 */
 
-    k230_ctx = mod_k230_get_default_ctx();
     memset(&k230_bind, 0, sizeof(k230_bind));
-
     k230_bind.huart = &huart4;
     k230_bind.sem_count = 0U;
     k230_bind.tx_mutex = NULL;
@@ -243,35 +265,20 @@ static void task_init_k230_bind(void)
 }
 
 /**
- * @brief 在 InitTask 阶段完成 Stepper 协议通道绑定。
- *
- * @details
- * 设计目的：
- * 1. 与 VOFA/K230 保持一致的初始化风格：由 InitTask 统一装配协议模块。
- * 2. StepperTask 不再负责“创建+绑定”，仅负责运行期 20ms 控制循环。
- * 3. 即使部分通道绑定失败，也不在此处阻塞系统启动：
- *    具体失败状态由 task_stepper_prepare_channels() 写入通道状态中，
- *    后续可由任务层按通道状态进行容错处理。
- */
-/**
- * @brief 调用 Stepper 任务侧通道准备函数，完成串口与驱动地址绑定。
- * @param 无。
- * @return 无。
+ * @brief 初始化 Stepper 双轴通道。
  */
 static void task_init_stepper_bind(void)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     (void)task_stepper_prepare_channels();
 }
 
 /**
- * @brief 等待系统初始化完成信号，并在通过后保持闸门常开。
- * @param 无。
- * @return 无。
+ * @brief 初始化闸门等待函数。
+ * @details
+ * 首次通过会回填一次信号量，使后续任务快速通过。
  */
 void task_wait_init_done(void)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     if (Sem_InitHandle == NULL)
     {
         return;
@@ -284,28 +291,30 @@ void task_wait_init_done(void)
 }
 
 /**
- * @brief 初始化任务入口：完成装配后释放初始化闸门并自删除。
- * @param argument 任务参数（未使用）。
- * @return 无。
+ * @brief InitTask 入口：执行一次性初始化并释放闸门。
+ * @param argument RTOS 任务参数（当前未使用）。
  */
 void StartInitTask(void *argument)
 {
-    // 1. 执行本函数核心流程，按输入参数更新输出与状态。
     (void)argument;
 
+    /* 步骤1：完成默认模块上下文的绑定参数注入。 */
     task_init_bind_map();
+    /* 步骤2：执行基础模块初始化并写入上电安全态。 */
     task_init_modules();
 
-    /* 在初始化任务中完成 VOFA 串口绑定，替代原 PcTask 的绑定职责。 */
+    /* 步骤3：绑定通信模块与步进双轴通道。 */
     task_init_vofa_bind();
     task_init_k230_bind();
     task_init_stepper_bind();
 
+    /* 步骤4：释放初始化闸门，允许其他业务任务进入主循环。 */
     if (Sem_InitHandle != NULL)
     {
         (void)osSemaphoreRelease(Sem_InitHandle);
     }
 
+    /* 步骤5：一次性初始化任务执行完毕后自删除。 */
     (void)osThreadTerminate(osThreadGetId());
 }
 

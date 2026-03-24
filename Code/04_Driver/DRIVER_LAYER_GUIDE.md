@@ -1,266 +1,182 @@
-# Driver 层开发与维护详解
+﻿# Driver 层开发与维护详解
 
 ## 文档元信息
 
 | 字段 | 内容 |
 | --- | --- |
-| 文档名称 | Driver Layer Guide |
+| 文档名称 | DRIVER_LAYER_GUIDE |
 | 所在层 | `Code/04_Driver` |
-| 作者 | 姜凯中（工程原作者） / Codex（文档整理与体系化说明） |
-| 版本 | v1.0.0 |
+| 作者 | 姜凯中 |
+| 版本 | v1.00 |
 | 最后更新 | 2026-03-24 |
 | 适用工程 | `FInal_graduate_work` |
-| 读者对象 | 底层驱动开发者、模块维护者、硬件联调人员 |
 
 ---
 
 ## 1. 层定位与边界
 
-Driver 层是“硬件访问最小封装层”，负责把 HAL 接口整理成稳定、可复用的底层契约。
+Driver 层是最小硬件访问封装层，目标是把 HAL 能力整理成稳定、低耦合、可预测的接口。
 
 Driver 层负责：
 
-1. 外设读写与状态判断（GPIO/PWM/UART/ADC/编码器）。
-2. 参数合法性保护与基础错误返回。
-3. 尽量屏蔽上层对 HAL 状态机细节的直接依赖。
+1. 外设原子操作封装（GPIO、ADC、PWM、Encoder、Key、UART）。
+2. 参数校验、状态校验与错误返回。
+3. 为 Module 层提供可组合的底层能力。
 
 Driver 层不负责：
 
-1. 业务语义（例如“这是激光还是蜂鸣器”）。
-2. 任务状态机和跨任务同步。
-3. 协议帧解析与控制策略。
+1. 业务语义和控制策略。
+2. RTOS 任务调度与线程同步。
+3. 上层协议流程。
 
 ---
 
-## 2. 驱动清单总览
+## 2. 驱动清单
 
-| 驱动 | 作用 | 典型上层模块 |
+| 驱动 | 核心能力 | 典型上层调用 |
 | --- | --- | --- |
-| `drv_gpio` | GPIO 读写/翻转统一抽象 | `mod_led/mod_relay/mod_sensor/mod_key/mod_motor` |
-| `drv_adc` | ADC 原始采样与平均采样 | `mod_battery` |
-| `drv_pwm` | PWM 通道设备化封装 | `mod_motor` |
-| `drv_encoder` | 编码器定时器启停与增量读取 | `mod_motor` |
-| `drv_key` | 按键状态机（消抖/单击/双击/长按） | `mod_key` |
-| `drv_uart` | 阻塞收发、DMA 收发、回调分发 | `mod_vofa/mod_k230/mod_stepper` |
+| `drv_gpio` | GPIO 读/写/翻转 | `mod_led/mod_relay/mod_sensor/mod_key/mod_motor` |
+| `drv_adc` | ADC 单次采样与平均采样 | `mod_battery` |
+| `drv_key` | 按键时序状态机（消抖/单击/双击/长按） | `mod_key` |
+| `drv_pwm` | PWM ctx 生命周期与占空比控制 | `mod_motor` |
+| `drv_encoder` | 编码器 ctx 生命周期与增量读取 | `mod_motor` |
+| `drv_uart` | 串口阻塞/DMA 收发与回调分发 | `mod_vofa/mod_k230/mod_stepper` |
+
+> 本轮精修重点为非 UART 驱动（gpio/adc/key/pwm/encoder）。
 
 ---
 
-## 3. 统一设计原则
+## 3. 统一设计约束
 
-1. **最小职责**：驱动只做“能稳定访问硬件”的最小封装。
-2. **参数保护**：所有接口都应处理空指针和非法参数。
-3. **可复用性**：不把业务概念写入驱动（例如 LED、底盘、视觉）。
-4. **状态可判断**：关键发送接口提供“是否忙/是否空闲”判定。
+1. Driver 接口禁止业务命名（例如 `drv_xxx_business_action`）。
+2. 硬件映射参数由上层注入，Driver 不写死板级信息。
+3. 可状态化驱动必须显式生命周期：`ctx_init -> start/use -> stop`。
+4. 错误语义统一：参数错误、状态错误、HAL 错误可区分。
 
 ---
 
-## 4. 逐驱动详解
+## 4. 非 UART 驱动深度说明
 
-## 4.1 `drv_gpio`
+### 4.1 `drv_gpio`
 
-对外接口：
+职责：
 
-1. `drv_gpio_write`
-2. `drv_gpio_read`
-3. `drv_gpio_toggle`
+1. 提供 `write/read/toggle` 三个原子接口。
+2. 屏蔽 `GPIO_PinState`，统一为 `gpio_level_e`。
 
-核心价值：
+解耦点：
 
-1. 统一了逻辑电平枚举 `GPIO_LEVEL_LOW/HIGH`。
-2. 上层不再直接处理 HAL 的 `GPIO_PinState` 类型差异。
+1. 不关心 LED/继电器/按键业务角色。
+2. 不持有任何上下文状态，接口幂等简单。
 
 维护要点：
 
-1. 不要在驱动层增加“设备语义函数”（例如 `led_on`），这些应该放模块层。
+1. 不在该层添加任何业务含义函数。
+2. 所有业务电平映射放在 Module 层 `active_level`。
 
----
+### 4.2 `drv_adc`
 
-## 4.2 `drv_adc`
+职责：
 
-对外接口：
+1. 提供单次原始值采样。
+2. 提供多次平均采样。
 
-1. `drv_adc_read_raw`
-2. `drv_adc_read_raw_avg`
+解耦点：
 
-实现特征：
-
-1. 单次读取流程：`Start -> PollForConversion -> GetValue -> Stop`。
-2. 平均读取内部复用单次读取接口。
-
-维护要点：
-
-1. 超时值 `DRV_ADC_TIMEOUT_MS` 改动要评估系统实时性。
-2. 失败路径必须保证 ADC 被 `Stop`，避免状态残留。
-
----
-
-## 4.3 `drv_pwm`
-
-对外接口：
-
-1. `drv_pwm_device_init`
-2. `drv_pwm_start`
-3. `drv_pwm_stop`
-4. `drv_pwm_set_duty`
-5. `drv_pwm_get_duty_max`
-
-实现特征：
-
-1. 设备对象化，支持多通道实例。
-2. 启动前置零、停止后清零，保证安全。
-3. 支持 `invert` 占空比反相。
+1. 只输出 ADC 原始计数值，不做电压语义换算。
+2. 通道初始化与校准由 Core/HAL 负责。
 
 维护要点：
 
-1. `duty_max` 必须与上层控制量定义一致。
-2. 新增定时器通道支持时同步更新通道合法性检查。
+1. 超时策略统一使用 `DRV_ADC_TIMEOUT_MS`。
+2. 平均采样失败必须整体失败，避免输出不可信结果。
 
----
+### 4.3 `drv_key`
 
-## 4.4 `drv_encoder`
+职责：
 
-对外接口：
+1. 实现按键状态机与时间阈值判定。
+2. 输出统一事件类型，不绑定业务语义。
 
-1. `drv_encoder_device_init`
-2. `drv_encoder_start/stop/reset`
-3. `drv_encoder_get_delta`
+解耦点：
 
-实现特征：
-
-1. 支持 16 位/32 位计数器位宽。
-2. 每次 `get_delta` 后清零计数器，天然适配周期采样增量模型。
-3. 支持 `invert` 方向反转。
+1. 电平读取通过回调注入，避免硬编码 GPIO。
+2. 模块层自行映射到业务事件。
 
 维护要点：
 
-1. 调用者需保证固定周期调用，才能正确解释增量为速度。
-2. 若要读绝对值，需在模块层累计，而非修改驱动接口语义。
+1. 调整阈值只影响驱动时序，不应影响事件语义映射接口。
+2. 新增手势类型时，先扩展驱动事件枚举，再扩展模块映射。
 
----
+### 4.4 `drv_pwm`
 
-## 4.5 `drv_key`
+职责：
 
-对外接口：
+1. 维护单通道 PWM ctx（句柄、通道、限幅、反相、启动状态）。
+2. 提供启停和占空比设置。
 
-1. `drv_key_init`
-2. `drv_key_scan`
+生命周期契约：
 
-实现特征：
-
-1. 完整按键状态机：
-   - 空闲
-   - 按下消抖
-   - 按下保持
-   - 释放消抖
-   - 双击窗口
-   - 第二次按压/释放判定
-2. 事件槽模型：每次扫描输出一个 pending 事件。
-3. 通过回调读取电平，彻底解耦板级引脚。
+1. `drv_pwm_ctx_init`：写入静态配置并清零比较值。
+2. `drv_pwm_start`：启动通道（幂等）。
+3. `drv_pwm_set_duty`：仅在 `started=true` 下生效。
+4. `drv_pwm_stop`：停止通道并清零输出（幂等）。
 
 维护要点：
 
-1. 扫描周期必须稳定，否则阈值 tick 语义会漂移。
-2. 修改状态机时先保持原事件语义兼容，再逐步扩展。
+1. `duty_max` 与上层控制量必须同量纲。
+2. 占空比反相仅在驱动层处理，任务层不重复取反。
 
----
+### 4.5 `drv_encoder`
 
-## 4.6 `drv_uart`
+职责：
 
-对外接口：
+1. 维护编码器 ctx（位宽、方向、启动状态）。
+2. 提供启停、清零和增量读取。
 
-1. 阻塞发送：`send_byte/send_string/send_buffer_blocking`
-2. 阻塞接收：`read_byte_blocking`
-3. 异步发送：`is_tx_free/send_dma`
-4. 异步接收：`receive_dma_start/stop`
-5. 回调注册：`register_callback`
+生命周期契约：
 
-关键机制：
-
-1. 维护固定实例回调表（USART1/2/3/UART4/5/USART6）。
-2. 在 `HAL_UARTEx_RxEventCallback` 内按实例分发到模块回调。
-3. 上层协议模块可共享同一分发中心而不改 HAL 回调入口。
+1. `drv_encoder_ctx_init`：绑定句柄并设定位宽/方向。
+2. `drv_encoder_start`：启动并清零计数基线。
+3. `drv_encoder_get_delta`：读取后清零的窗口模型。
+4. `drv_encoder_stop`：停止并清理运行态。
 
 维护要点：
 
-1. 串口实例映射必须与工程实际外设保持一致。
-2. 发送前务必检查 `is_tx_free`，避免并发 DMA 冲突。
-3. 若新增 UART 实例，必须同步扩展映射表与回调数组。
+1. “读后清零”语义不可破坏。
+2. 若新增绝对值读取，必须新增接口，不能改现有接口语义。
 
 ---
 
-## 5. Driver 与 Module 映射关系（当前工程）
+## 5. 与 Module 层接口契约
 
-1. `mod_led/mod_relay/mod_sensor/mod_key/mod_motor` -> `drv_gpio`
-2. `mod_battery` -> `drv_adc`
-3. `mod_motor` -> `drv_pwm + drv_encoder`
-4. `mod_vofa/mod_k230/mod_stepper` -> `drv_uart`
-5. `mod_key` -> `drv_key`
-
-这层映射保证了：
-
-1. 业务模块不直接写 HAL。
-2. 硬件替换时优先改驱动或绑定参数，不影响任务层。
+1. Module 层负责生命周期编排，Driver 只执行单次操作。
+2. Driver 返回状态码后，Module 必须决定降级或重试策略。
+3. Task 层禁止直接调用 Driver 绕过 Module。
 
 ---
 
-## 6. 并发与实时性注意事项
+## 6. 回归检查清单
 
-1. `drv_uart` 本身不做跨模块所有权仲裁，仲裁在 `mod_uart_guard`。
-2. DMA 接口是异步语义，上层必须处理“发送忙”场景。
-3. `drv_key` 事件判定依赖固定扫描周期，实时抖动会直接影响行为。
-4. `drv_encoder_get_delta` 读后清零，跨任务并发读取会互相影响，禁止多处直接读。
-
----
-
-## 7. 扩展指南（Driver 层）
-
-新增驱动建议流程：
-
-1. 先定义设备对象结构体（如需要多实例）。
-2. 再定义统一生命周期接口：`init/start/stop/get`。
-3. 参数非法必须快速返回，避免隐式异常。
-4. 所有 HAL 错误码在驱动层收敛为可理解的 `bool/状态码`。
-
-新增 UART 类驱动能力建议：
-
-1. 优先保持回调分发表模型，避免多个模块重写 HAL 回调。
-2. 新增功能保持对现有接口向后兼容，避免模块层大范围改动。
+1. 非法参数输入是否都能安全返回。
+2. `start/stop` 幂等行为是否保持。
+3. PWM/Encoder 生命周期是否仍满足 `init -> start -> use -> stop`。
+4. Module 层是否仍通过 Driver 接口访问硬件，无跨层绕过。
 
 ---
 
-## 8. 维护与回归测试建议
+## 7. 扩展建议
 
-建议最小回归集合：
-
-1. GPIO：读写翻转正确性。
-2. ADC：单次与平均采样结果一致性。
-3. PWM：0%、50%、100% 占空比输出正确性与反相验证。
-4. Encoder：正反转增量方向与溢出边界。
-5. Key：单击/双击/长按阈值行为。
-6. UART：
-   - DMA 发送空闲判定
-   - ReceiveToIdle 回调触发
-   - 多实例回调分发正确性
+1. 新增状态化驱动优先采用 `ctx + status` 设计。
+2. 破坏性变更前先补迁移接口，再分阶段替换上层调用。
+3. 保留非阻塞与阻塞接口语义清晰边界，避免调用方混用。
 
 ---
 
-## 9. 常见故障排查
+## 8. 版本记录
 
-1. 串口无数据：
-   - 先查 `drv_uart_register_callback` 是否成功，再查 DMA 是否启动。
-2. 串口偶发忙：
-   - 查上层是否在 `is_tx_free` 为 false 时仍强发。
-3. 编码器方向反了：
-   - 查 `drv_encoder_device_init` 的 `invert` 参数。
-4. 按键误判：
-   - 查扫描周期是否稳定、阈值 tick 是否合理。
-5. PWM 输出异常：
-   - 查 `duty_max` 与反相配置是否匹配硬件。
+### v1.00
 
----
-
-## 10. 版本演进建议
-
-1. 驱动接口一旦发布，优先“增量扩展”，避免破坏式改名。
-2. HAL 升级后先做驱动层回归，再放开上层联调。
-3. 每次驱动新增字段或接口，必须在本文件补充“新增语义和边界”说明。
+1. 建立 Driver 层单文档详解。
+2. 完成非 UART 驱动的生命周期契约与解耦边界说明。
+3. 增补 `drv_pwm/drv_encoder` 的数据契约和维护规则。

@@ -1,377 +1,191 @@
-# Module 层开发与维护详解
+﻿# Module 层开发与维护详解
 
 ## 文档元信息
 
 | 字段 | 内容 |
 | --- | --- |
-| 文档名称 | Module Layer Guide |
+| 文档名称 | MODULE_LAYER_GUIDE |
 | 所在层 | `Code/02_Module` |
-| 作者 | 姜凯中（工程原作者） / Codex（文档整理与体系化说明） |
-| 版本 | v1.0.0 |
+| 作者 | 姜凯中 |
+| 版本 | v1.00 |
 | 最后更新 | 2026-03-24 |
 | 适用工程 | `FInal_graduate_work` |
-| 目标读者 | 模块开发者、任务层开发者、联调与维护人员 |
 
 ---
 
 ## 1. 层定位与边界
 
-Module 层是“业务语义抽象层”，作用是把 Driver 的硬件接口组合成可复用的领域接口。
+Module 层负责把 Driver 的原子能力组合成业务语义接口，是 Task 与 Driver 之间的语义转换层。
 
 Module 层负责：
 
-1. 硬件映射注入（bind map / ctx bind）。
-2. 协议上下文管理（init/bind/unbind/process）。
-3. 业务语义转换（例如按键事件语义、循迹权重、电池电压换算）。
+1. 板级映射注入（`bind_t`）。
+2. 运行上下文生命周期管理（`ctx_t`）。
+3. 业务语义输出（事件、状态、控制命令）。
 
 Module 层不负责：
 
-1. 任务调度和状态机编排（归 Task 层）。
-2. HAL 级原始外设调用细节（归 Driver 层）。
-3. 算法底层实现（归 Common 层）。
+1. RTOS 调度与线程同步。
+2. HAL 底层调用细节。
+3. 跨任务策略编排。
 
 ---
 
-## 2. 模块总览
+## 2. 统一架构规范（ctx 模式）
 
-| 模块 | 主要职责 | 典型调用方 | 主要依赖 |
-| --- | --- | --- | --- |
-| `mod_led` | LED 逻辑 ID 映射与控制 | `task_gpio`, `task_init` | `drv_gpio` |
-| `mod_relay` | 继电器 ID 映射与控制 | `task_gpio`, `task_init` | `drv_gpio` |
-| `mod_key` | 按键硬件绑定 + 事件语义映射 | `task_key`, `task_init` | `drv_key`, `drv_gpio` |
-| `mod_sensor` | 12 路循迹采样与权重计算 | `task_dcc`, `task_test` | `drv_gpio` |
-| `mod_motor` | 双电机执行器抽象（方向/PWM/编码器） | `task_dcc`, `task_stepper` | `drv_pwm`, `drv_encoder`, `drv_gpio` |
-| `mod_battery` | ADC 原始值到电压值换算 | `task_oled` | `drv_adc` |
-| `mod_oled` | OLED 显存渲染与 I2C 刷新 | `task_oled` | I2C HAL, `mod_oled_data` |
-| `mod_oled_data` | 字库与位图资源声明 | `mod_oled` | 无运行期依赖 |
-| `mod_uart_guard` | UART 归属仲裁 | `mod_vofa`, `mod_k230`, `mod_stepper` | `drv_uart` 句柄 |
-| `mod_vofa` | VOFA 协议收发与命令解析 | `task_init`, `task_stepper`, `task_test` | `drv_uart`, `common_str`, `mod_uart_guard` |
-| `mod_k230` | K230 帧接收、校验、解析 | `task_init`, `task_stepper` | `drv_uart`, `common_checksum`, `mod_uart_guard` |
-| `mod_stepper` | 步进驱动协议组帧与发送 | `task_stepper` | `drv_uart`, `mod_uart_guard` |
+所有模块统一接口建议：
 
----
+1. `*_get_default_ctx`
+2. `*_ctx_init`
+3. `*_ctx_deinit`
+4. `*_bind`
+5. `*_unbind`
+6. `*_is_bound`
+7. 运行期 API（首参数统一为 `ctx`）
 
-## 3. 统一解耦模式
+统一收益：
 
-## 3.1 映射注入模式（GPIO 类模块）
-
-适用模块：`mod_led/mod_relay/mod_sensor/mod_motor`
-
-模式特点：
-
-1. 绑定阶段注入硬件资源映射表。
-2. 运行期只用逻辑 ID 操作，不传播端口引脚细节。
-3. 支持硬件改版时只改绑定表，不改任务代码。
-
-## 3.2 上下文绑定模式（协议类模块）
-
-适用模块：`mod_vofa/mod_k230/mod_stepper`
-
-模式特点：
-
-1. `ctx + bind` 双结构，支持“初始化”和“重绑定”。
-2. 资源注入包括：UART、互斥锁、信号量、协议参数。
-3. 统一通过 `mod_uart_guard` 避免串口重复占用。
-
-## 3.3 任务层最小依赖原则
-
-1. Task 层只调用模块公开 API，不访问模块静态内部状态。
-2. 模块层只暴露必要控制面，隐藏协议拼帧/环形缓冲细节。
+1. 生命周期可视化，状态可追踪。
+2. 硬件映射集中，换板成本低。
+3. Task 层调用风格统一，阅读成本低。
 
 ---
 
-## 4. 逐模块详解
-
-## 4.1 `mod_led`（LED 执行抽象）
-
-关键接口：
-
-1. `mod_led_bind_map()`
-2. `mod_led_Init()`
-3. `mod_led_on/off/toggle()`
-
-调用链：
-
-1. `InitTask` 注入映射并初始化。
-2. `GpioTask` 根据 DCC 运行态驱动灯态。
-
-扩展建议：
-
-1. 新增 LED 通道时先扩展 `mod_led_id_e`，再扩展映射表和上层状态逻辑。
-2. 保持 active_level 可配置，适配高低电平有效板卡差异。
-
-## 4.2 `mod_relay`（继电器执行抽象）
-
-关键接口：
-
-1. `mod_relay_bind_map()`
-2. `mod_relay_init()`
-3. `mod_relay_on/off/toggle()`
-
-当前用途：
-
-1. `RELAY_LASER`：ON 态激光使能。
-2. `RELAY_BUZZER`：按键反馈与 STOP 告警复用。
-
-扩展建议：
-
-1. 新增执行器（风扇、电磁阀）可沿用该模式扩充 ID。
-2. 高风险输出建议上电默认 `off` 并在 `init` 强制执行一次。
-
-## 4.3 `mod_key`（板级按键语义化）
-
-关键接口：
-
-1. `mod_key_init()`
-2. `mod_key_scan()`
-
-内部策略：
-
-1. 使用 `drv_key` 进行消抖、单击/双击/长按判定。
-2. 使用映射表把驱动层事件映射为模块语义事件。
-
-解耦价值：
-
-1. Task 层不关心按键电平和消抖细节，只关心事件语义。
-
-## 4.4 `mod_sensor`（循迹采样抽象）
-
-关键接口：
-
-1. `mod_sensor_bind_map()`
-2. `mod_sensor_get_states()`
-3. `mod_sensor_get_weight()`
-
-核心逻辑：
-
-1. `line_level` 定义每路“黑线有效电平”。
-2. `factor` 定义每路权重。
-3. 输出权重限制在 `[-1, 1]`。
-
-扩展建议：
-
-1. 改传感器数量需同步调整 `MOD_SENSOR_CHANNEL_NUM` 与上层数组长度。
-2. 新板卡可只换映射表，不改 DCC 算法框架。
-
-## 4.5 `mod_motor`（双电机抽象）
-
-关键接口：
-
-1. `mod_motor_bind_map()`
-2. `mod_motor_init()`
-3. `mod_motor_set_mode()`
-4. `mod_motor_set_duty()`
-5. `mod_motor_tick()`
-6. `mod_motor_get_speed/position()`
-
-内部机制：
-
-1. 组合了方向引脚、PWM 通道、编码器通道。
-2. 内置过零保护，防止反向瞬态冲击。
-3. `tick` 负责刷新速度增量与累计位置。
-
-扩展建议：
-
-1. 增加电机通道需同步扩展 `MOD_MOTOR_MAX`、映射、任务控制逻辑。
-2. 若引入电流保护，建议在模块层做“执行层安全保护”，任务层只感知结果。
-
-## 4.6 `mod_battery`（电压换算）
-
-关键接口：
-
-1. `mod_battery_bind_adc()`
-2. `mod_battery_update()`
-3. `mod_battery_get_voltage()`
-
-核心公式：
-
-1. `voltage_pin = raw / ADC_RES * ADC_REF`
-2. `voltage_battery = voltage_pin * VOL_RATIO`
-
-维护建议：
-
-1. 更换分压电阻后先改 `MOD_BATTERY_VOL_RATIO`。
-2. 显示抖动大时优先调 `MOD_BATTERY_CNT` 平均次数。
-
-## 4.7 `mod_oled` / `mod_oled_data`（显示通道）
-
-`mod_oled` 关键接口：
-
-1. `OLED_BindI2C()`
-2. `OLED_Init()`
-3. `OLED_Clear()/OLED_Show*/OLED_Update()`
-
-`mod_oled_data` 作用：
-
-1. 提供 ASCII/中文点阵资源与示例位图。
-
-设计特点：
-
-1. 双缓冲思想：先写显存缓存，再统一刷新。
-2. I2C 异步发送使用 HAL 回调完成状态推进。
-
-扩展建议：
-
-1. 页面逻辑放在 Task 层，不放在 `mod_oled`。
-2. 新增字模统一放 `mod_oled_data`，避免渲染逻辑和资源耦合。
-
-## 4.8 `mod_uart_guard`（串口仲裁）
-
-关键接口：
-
-1. `mod_uart_guard_claim()`
-2. `mod_uart_guard_release()`
-3. `mod_uart_guard_get_owner()`
-
-解决问题：
-
-1. 多协议模块争用同一 UART 时的冲突检测。
-2. 防止“后绑定覆盖前绑定”的隐蔽故障。
-
-维护建议：
-
-1. 任何占用 UART 的新模块都必须接入该守卫。
-2. 解绑流程必须调用 `release`，避免资源泄漏。
-
-## 4.9 `mod_vofa`（上位机调试协议）
-
-关键接口：
-
-1. `mod_vofa_ctx_init/bind/unbind/is_bound`
-2. `mod_vofa_send_float/int/uint/string_ctx`
-3. `mod_vofa_get_command_ctx`
-
-实现要点：
-
-1. 默认上下文 + 兼容旧 API。
-2. DMA 收发 + 可选发送互斥锁。
-3. 接收回调中解析 `start/stop` 命令并释放绑定信号量。
-
-扩展建议：
-
-1. 新命令只在命令表扩展，不改任务层接口。
-2. 新发送类型优先复用 `common_str`。
-
-## 4.10 `mod_k230`（视觉误差协议）
-
-关键接口：
-
-1. `mod_k230_ctx_init/bind/unbind`
-2. `mod_k230_get_latest_frame`
-3. `mod_k230_add/remove/clear_semaphores`
-4. `mod_k230_set_checksum_algo`
-
-实现要点：
-
-1. 固定 12 字节帧解析状态机。
-2. DMA -> 环形缓冲 -> 流式拼帧 -> 最新帧输出。
-3. 支持解析失败重同步。
-4. 关闭 HT 中断，按 IDLE/TC 事件搬运数据。
-
-扩展建议：
-
-1. 增加 CRC 算法可在 `checksum_algo` 枚举与校验分支扩展。
-2. 增加帧字段时，先改协议常量索引和 decode 结构，再改上层任务映射。
-
-## 4.11 `mod_stepper`（步进发送协议）
-
-关键接口：
-
-1. `mod_stepper_ctx_init/bind/unbind`
-2. `mod_stepper_enable/velocity/position/stop`
-3. `mod_stepper_process`
-
-实现要点：
-
-1. TX-only，不做回读解析。
-2. `tx_active` + 轮询空闲判定发送完成。
-3. 发送超时保护统计失败计数。
-4. 每个上下文绑定一个 UART + 一个 driver 地址。
-
-扩展建议：
-
-1. 新协议命令优先通过统一 `_send_frame()` 发送入口扩展。
-2. 需要回读时建议新增独立 RX 模块，避免破坏当前发送职责单一性。
+## 3. 模块清单与职责
+
+| 模块 | 主要职责 | 下层依赖 |
+| --- | --- | --- |
+| `mod_led` | LED 通道语义控制 | `drv_gpio` |
+| `mod_relay` | 继电器语义控制 | `drv_gpio` |
+| `mod_sensor` | 多路循迹状态与权重计算 | `drv_gpio` |
+| `mod_key` | 按键映射与事件语义输出 | `drv_key + drv_gpio` |
+| `mod_motor` | 双电机执行抽象（方向/PWM/编码器） | `drv_gpio + drv_pwm + drv_encoder` |
+| `mod_battery` | 电池电压采样与换算 | `drv_adc` |
+| `mod_oled` | OLED 渲染与刷新封装 | I2C/OLED 组件 |
+| `mod_vofa` | VOFA 数据发送 | `drv_uart` |
+| `mod_k230` | K230 帧接收解析 | `drv_uart` |
+| `mod_stepper` | 步进协议封装 | `drv_uart` |
+| `mod_uart_guard` | 串口发送仲裁 | UART 相关模块 |
+
+> 本轮精修重点为非 UART 模块（motor/led/relay/sensor/key/battery/oled）。
 
 ---
 
-## 5. 模块调用关系（当前工程）
+## 4. 重点模块深度解耦说明
 
-## 5.1 Task -> Module
+### 4.1 `mod_motor`（核心模块）
 
-1. `task_init`：`mod_led/mod_relay/mod_motor/mod_sensor/mod_key/mod_vofa/mod_k230/mod_stepper`
-2. `task_dcc`：`mod_motor/mod_sensor`
-3. `task_gpio`：`mod_led/mod_relay`
-4. `task_key`：`mod_key`
-5. `task_oled`：`mod_battery/mod_oled`
-6. `task_stepper`：`mod_k230/mod_stepper/mod_vofa/mod_motor`
-7. `task_test`：`mod_vofa/mod_sensor`
+#### 4.1.1 数据所有权
 
-## 5.2 Module -> Driver
+1. `mod_motor_bind_t`：只在绑定阶段作为输入，不在运行期持有原指针。
+2. `mod_motor_ctx_t.map[]`：绑定成功后保存硬件映射副本，作为唯一运行配置源。
+3. `mod_motor_ctx_t.state[]`：运行态唯一状态缓存（模式、方向、速度、位置、保护标志）。
+4. `drv_pwm_ctx_t[]/drv_encoder_ctx_t[]`：由模块内部持有，上层任务不直接访问。
 
-1. `mod_battery` -> `drv_adc`
-2. `mod_motor` -> `drv_pwm + drv_encoder + drv_gpio`
-3. `mod_led/mod_relay/mod_sensor/mod_key` -> `drv_gpio`（`mod_key` 同时使用 `drv_key`）
-4. `mod_vofa/mod_k230/mod_stepper` -> `drv_uart`
+#### 4.1.2 生命周期契约
 
----
+1. `ctx_init`：仅建立上下文初始状态，可选直接绑定。
+2. `bind`：校验并写入映射，不触发硬件动作。
+3. `init`：创建并启动 PWM/Encoder 通道，写入安全态（COAST）。
+4. `set_mode/set_duty`：运行期命令入口。
+5. `tick`：周期读取编码器、更新反馈、释放过零挂起命令。
+6. `unbind/deinit`：停止通道并清理状态。
 
-## 6. UART 资源分配与冲突策略
+#### 4.1.3 控制链路（任务视角）
 
-当前映射：
+1. `DccTask` 在 ON 态调用 `mod_motor_set_duty` 下发目标。
+2. `mod_motor_set_duty` 执行限幅、方向解析、过零保护判定。
+3. `mod_motor_tick` 读取编码器增量并更新 `current_speed/total_position`。
+4. `DccTask` 再通过 `get_speed/get_position` 闭环。
 
-1. VOFA: `huart3`
-2. K230: `huart4`
-3. Stepper X: `huart5`
-4. Stepper Y: `huart2`
+#### 4.1.4 错误降级策略
 
-冲突控制：
+1. PWM 写失败：通道 `hw_ready=false`，后续拒绝主动驱动。
+2. 编码器读取失败：通道降级并清速度输出。
+3. 未绑定/未初始化：所有运行期 API 安全返回，不访问底层。
 
-1. 绑定时先 `mod_uart_guard_claim`。
-2. 解绑时必须 `mod_uart_guard_release`。
-3. 绑定失败立即回滚回调和资源登记。
+#### 4.1.5 后续扩展方式
 
----
+1. 新增电机通道：扩展 `MOD_MOTOR_MAX` 与映射表，保持 `ctx` 同构。
+2. 新增模式：在 `mode` 枚举与执行分支扩展，不改底层驱动契约。
+3. 新增保护：优先在模块内静态函数实现，避免任务层散落保护逻辑。
 
-## 7. 扩展指南（Module 层）
+### 4.2 `mod_key`
 
-新增模块推荐模板：
+1. 通过 `mod_key_hw_cfg_t` 映射“硬件按键 -> 业务事件”。
+2. `drv_key` 单实例约束由模块层通过 `s_active_ctx` 管理。
+3. Task 层只消费事件，不直接读电平。
 
-1. 先定义 `*_bind_t` 或 `*_map_item_t`（注入资源）。
-2. 再定义 `init/bind/unbind/is_bound` 生命周期接口。
-3. 业务接口只暴露必要控制面。
-4. 对外返回 `bool` 或明确状态码，不抛隐藏副作用。
-5. 在 `task_init` 统一注入与初始化。
+### 4.3 `mod_sensor`
 
-新增协议模块建议：
+1. 逐通道读取 GPIO 状态，输出 `states[]` 与归一化权重。
+2. 权重裁剪到 `[-1,1]`，保证上层控制输入边界稳定。
+3. 采样逻辑封装在模块，任务层不处理引脚细节。
 
-1. 强制接入 `mod_uart_guard`。
-2. 优先使用 DMA，必要时用互斥锁序列化发送。
-3. 回调函数只做“最小搬运与通知”，重计算放到任务上下文。
+### 4.4 `mod_led` / `mod_relay`
 
----
+1. 两者保持同构接口，降低心智负担。
+2. `active_level` 解决板级高/低有效差异，任务层只用语义接口。
+3. `init` 默认写安全态（LED 全灭、继电器全断开）。
 
-## 8. 维护规范与排障
+### 4.5 `mod_battery`
 
-维护检查点：
+1. `update` 做“采样 + 换算 + 缓存”。
+2. `get_voltage` 只读缓存，避免重复采样带来阻塞。
+3. 换算参数由 `bind` 注入，便于不同分压比板卡复用。
 
-1. 所有模块接口是否保持“先 bind 后 run”约束。
-2. 解绑时是否完整释放资源（DMA/回调/guard/互斥锁）。
-3. 是否存在跨层反向依赖（模块调用任务层）问题。
+### 4.6 `mod_oled`
 
-常见故障定位：
-
-1. 绑定失败：先查参数合法性，再查 UART guard 占用者。
-2. 有数据无解析：查 DMA 回调是否触发、环形缓冲是否推进、校验算法是否匹配。
-3. 发送偶发失败：查 tx_mutex 竞争、串口空闲状态、超时恢复计数。
-4. 行为不符合预期：查 Task 层是否按周期调用 `process/update/tick`。
+1. 显存缓存与 I2C 刷新分离，任务层只组织页面数据。
+2. I2C 句柄通过 `OLED_BindI2C` 注入，不写死总线实例。
+3. 字模资源与渲染逻辑分离（`mod_oled_data`）。
 
 ---
 
-## 9. 模块层版本演进建议
+## 5. 调用链示例
 
-建议后续按以下原则管理：
+1. `task_key -> mod_key(ctx) -> drv_key + drv_gpio`
+2. `task_dcc -> mod_motor(ctx) -> drv_gpio + drv_pwm + drv_encoder`
+3. `task_dcc -> mod_sensor(ctx) -> drv_gpio`
+4. `task_gpio -> mod_led/mod_relay(ctx) -> drv_gpio`
+5. `task_oled -> mod_battery(ctx) -> drv_adc`
+6. `task_oled -> mod_oled + mod_oled_data -> I2C`
 
-1. 任何模块新增 API 时同步更新本文件“逐模块详解”。
-2. 资源绑定字段变化必须在文档记录“新增字段语义与默认值”。
-3. 若模块职责迁移（上移 Task 或下移 Driver），需在变更记录中明确迁移原因。
+---
+
+## 6. 维护规则
+
+1. 禁止在 Task 层绕过模块直接调用对应 Driver（如 `drv_pwm_*`）。
+2. 绑定参数非法时必须失败返回，且不污染已生效状态。
+3. 运行期 API 在未就绪场景必须安全返回。
+4. 模块对外公开结构体字段变更时，必须同步更新本说明文档。
+
+---
+
+## 7. 回归检查清单
+
+1. 生命周期回归：`init -> bind -> run -> unbind -> deinit` 是否完整可重复。
+2. 异常回归：底层驱动失败是否进入预期降级路径。
+3. 边界回归：未绑定、空指针、越界 ID 是否安全返回。
+4. 调用链回归：任务层是否仍只通过 Module API 调用。
+
+---
+
+## 8. 扩展模板（建议）
+
+新增模块时建议最小结构：
+
+1. `mod_xxx_bind_t`：板级映射输入。
+2. `mod_xxx_ctx_t`：运行上下文。
+3. `mod_xxx_ctx_init/bind/unbind/is_bound`。
+4. 运行期语义接口（首参统一为 `ctx`）。
+
+---
+
+## 9. 版本记录
+
+### v1.00
+
+1. 建立 Module 层单文档详解。
+2. 按 ctx 架构统一生命周期描述。
+3. 增补 `mod_motor` 数据所有权、生命周期契约、错误降级与扩展指南。

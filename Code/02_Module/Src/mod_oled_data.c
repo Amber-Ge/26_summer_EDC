@@ -1,5 +1,8 @@
 ﻿/**
  * @file    mod_oled_data.c
+ * @author  姜凯中
+ * @version v1.00
+ * @date    2026-03-24
  * @brief   OLED 字库与位图数据实现。
  * @details
  * 1. 文件作用：提供 OLED 渲染使用的 ASCII/中文点阵和位图常量数据定义。
@@ -8,6 +11,7 @@
  * 4. 下层依赖：无运行期硬件依赖，可独立编译和复用。
  */
 #include "mod_oled_data.h"
+
 
 /**
  * @brief OLED 字模数据存储格式说明

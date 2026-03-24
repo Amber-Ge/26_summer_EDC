@@ -1,5 +1,8 @@
 ﻿/**
  * @file    drv_key.c
+ * @author  姜凯中
+ * @version v1.00
+ * @date    2026-03-24
  * @brief   通用按键状态机驱动实现。
  * @details
  * 1. 文件作用：实现按键消抖、单击/双击/长按事件判定状态机。
@@ -10,6 +13,7 @@
 
 #include "drv_key.h"
 #include <string.h>
+
 
 /**
  * @brief 按键状态机状态定义
@@ -51,12 +55,6 @@ static drv_key_event_t s_drv_key_pending_evt = {0U, DRV_KEY_EVENT_NONE};  // 待
  * @brief 设置待上报事件（只保留一个事件槽）
  * @param key_id 按键索引
  * @param type   事件类型
- */
-/**
- * @brief 执行驱动层硬件访问与基础控制。
- * @param key_id 函数输入参数，语义由调用场景决定。
- * @param type 函数输入参数，语义由调用场景决定。
- * @return 无。
  */
 static void drv_key_set_pending_event(uint8_t key_id, drv_key_event_type_e type)
 {
@@ -119,12 +117,6 @@ static void drv_key_reset_key_runtime(drv_key_obj_t *key_obj)
 /**
  * @brief 处理空闲态
  */
-/**
- * @brief 执行驱动层硬件访问与基础控制。
- * @param key_id 函数输入参数，语义由调用场景决定。
- * @param key_obj 函数输入参数，语义由调用场景决定。
- * @return 返回函数执行结果。
- */
 static drv_key_state_e drv_key_handle_idle(uint8_t key_id, drv_key_obj_t *key_obj)
 {
     drv_key_state_e next_state = DRV_KEY_ST_IDLE; // 默认保持空闲
@@ -148,12 +140,6 @@ static drv_key_state_e drv_key_handle_idle(uint8_t key_id, drv_key_obj_t *key_ob
 
 /**
  * @brief 处理第一次按下消抖态
- */
-/**
- * @brief 执行驱动层硬件访问与基础控制。
- * @param key_id 函数输入参数，语义由调用场景决定。
- * @param key_obj 函数输入参数，语义由调用场景决定。
- * @return 返回函数执行结果。
  */
 static drv_key_state_e drv_key_handle_press_debounce(uint8_t key_id, drv_key_obj_t *key_obj)
 {
@@ -190,12 +176,6 @@ static drv_key_state_e drv_key_handle_press_debounce(uint8_t key_id, drv_key_obj
 
 /**
  * @brief 处理第一次按下保持态（在此判断长按）
- */
-/**
- * @brief 执行驱动层硬件访问与基础控制。
- * @param key_id 函数输入参数，语义由调用场景决定。
- * @param key_obj 函数输入参数，语义由调用场景决定。
- * @return 返回函数执行结果。
  */
 static drv_key_state_e drv_key_handle_pressed(uint8_t key_id, drv_key_obj_t *key_obj)
 {
@@ -237,12 +217,6 @@ static drv_key_state_e drv_key_handle_pressed(uint8_t key_id, drv_key_obj_t *key
 
 /**
  * @brief 处理第一次释放消抖态
- */
-/**
- * @brief 执行驱动层硬件访问与基础控制。
- * @param key_id 函数输入参数，语义由调用场景决定。
- * @param key_obj 函数输入参数，语义由调用场景决定。
- * @return 返回函数执行结果。
  */
 static drv_key_state_e drv_key_handle_release_debounce(uint8_t key_id, drv_key_obj_t *key_obj)
 {
@@ -300,12 +274,6 @@ static drv_key_state_e drv_key_handle_release_debounce(uint8_t key_id, drv_key_o
 /**
  * @brief 处理等待第二击窗口态
  */
-/**
- * @brief 执行驱动层硬件访问与基础控制。
- * @param key_id 函数输入参数，语义由调用场景决定。
- * @param key_obj 函数输入参数，语义由调用场景决定。
- * @return 返回函数执行结果。
- */
 static drv_key_state_e drv_key_handle_wait_second_click(uint8_t key_id, drv_key_obj_t *key_obj)
 {
     drv_key_state_e next_state = DRV_KEY_ST_WAIT_SECOND_CLICK; // 默认保持该状态
@@ -343,12 +311,6 @@ static drv_key_state_e drv_key_handle_wait_second_click(uint8_t key_id, drv_key_
 /**
  * @brief 处理第二次按下消抖态
  */
-/**
- * @brief 执行驱动层硬件访问与基础控制。
- * @param key_id 函数输入参数，语义由调用场景决定。
- * @param key_obj 函数输入参数，语义由调用场景决定。
- * @return 返回函数执行结果。
- */
 static drv_key_state_e drv_key_handle_second_press_debounce(uint8_t key_id, drv_key_obj_t *key_obj)
 {
     drv_key_state_e next_state = DRV_KEY_ST_SECOND_PRESS_DEBOUNCE; // 默认保持该状态
@@ -383,12 +345,6 @@ static drv_key_state_e drv_key_handle_second_press_debounce(uint8_t key_id, drv_
 /**
  * @brief 处理第二次按下保持态
  */
-/**
- * @brief 执行驱动层硬件访问与基础控制。
- * @param key_id 函数输入参数，语义由调用场景决定。
- * @param key_obj 函数输入参数，语义由调用场景决定。
- * @return 返回函数执行结果。
- */
 static drv_key_state_e drv_key_handle_second_pressed(uint8_t key_id, drv_key_obj_t *key_obj)
 {
     drv_key_state_e next_state = DRV_KEY_ST_SECOND_PRESSED; // 默认保持该状态
@@ -412,12 +368,6 @@ static drv_key_state_e drv_key_handle_second_pressed(uint8_t key_id, drv_key_obj
 
 /**
  * @brief 处理第二次释放消抖态
- */
-/**
- * @brief 执行驱动层硬件访问与基础控制。
- * @param key_id 函数输入参数，语义由调用场景决定。
- * @param key_obj 函数输入参数，语义由调用场景决定。
- * @return 返回函数执行结果。
  */
 static drv_key_state_e drv_key_handle_second_release_debounce(uint8_t key_id, drv_key_obj_t *key_obj)
 {
@@ -455,9 +405,10 @@ static drv_key_state_e drv_key_handle_second_release_debounce(uint8_t key_id, dr
 /* ============================ 对外接口实现 ============================ */
 
 /**
- * @brief 执行驱动层硬件访问与基础控制。
- * @param cfg 函数输入参数，语义由调用场景决定。
- * @return 布尔结果，`true` 表示满足条件。
+ * @brief 初始化通用按键驱动。
+ * @param cfg 初始化配置。
+ * @return true 初始化成功。
+ * @return false 参数非法。
  */
 bool drv_key_init(const drv_key_cfg_t *cfg)
 {
@@ -526,9 +477,10 @@ bool drv_key_init(const drv_key_cfg_t *cfg)
 }
 
 /**
- * @brief 执行驱动层硬件访问与基础控制。
- * @param out_event 函数输入参数，语义由调用场景决定。
- * @return 布尔结果，`true` 表示满足条件。
+ * @brief 扫描一次按键状态机并输出事件。
+ * @param out_event 输出事件结构体指针，若无事件则输出 `DRV_KEY_EVENT_NONE`。
+ * @return true 扫描成功。
+ * @return false 参数非法或驱动未初始化。
  */
 bool drv_key_scan(drv_key_event_t *out_event)
 {
@@ -606,4 +558,6 @@ bool drv_key_scan(drv_key_event_t *out_event)
     // 7. 返回扫描成功。
     return true;
 }
+
+
 
