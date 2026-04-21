@@ -36,7 +36,7 @@ static bool mod_sensor_ctx_ready(const mod_sensor_ctx_t *ctx)
 static bool mod_sensor_check_item(const mod_sensor_map_item_t *item)
 {
     // 步骤1：端口句柄必须有效。
-    if ((item == NULL) || (item->port == NULL))
+    if ((item == NULL) || (item->pin.port == NULL))
     {
         return false;
     }
@@ -66,7 +66,7 @@ static void mod_sensor_sample(mod_sensor_ctx_t *ctx)
     for (uint8_t i = 0U; i < MOD_SENSOR_CHANNEL_NUM; i++)
     {
         const mod_sensor_map_item_t *item = &ctx->map[i]; // item：当前通道映射配置。
-        gpio_level_e level = drv_gpio_read(item->port, item->pin); // level：当前通道实时电平。
+        gpio_level_e level = drv_gpio_read_pin(&item->pin); // level：当前通道实时电平。
 
         if (level == item->line_level)
         {

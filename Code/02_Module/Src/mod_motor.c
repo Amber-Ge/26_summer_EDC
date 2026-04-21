@@ -48,20 +48,25 @@ static bool mod_motor_check_cfg_item(const mod_motor_hw_cfg_t *item)
     }
 
     /* 方向桥臂引脚必须完整。 */
-    if ((item->in1_port == NULL) || (item->in2_port == NULL))
+    if ((item->in1.port == NULL) || (item->in2.port == NULL))
     {
         return false;
     }
 
     /* PWM/编码器定时器句柄必须有效。 */
-    if ((item->pwm_htim == NULL) || (item->enc_htim == NULL))
+    if ((item->pwm.instance == NULL) || (item->encoder.instance == NULL))
     {
         return false;
     }
 
     /* 编码器位宽只允许驱动层支持的 16 位或 32 位。 */
-    if ((item->enc_counter_bits != DRV_ENCODER_BITS_16) &&
-        (item->enc_counter_bits != DRV_ENCODER_BITS_32))
+    if ((item->encoder.counter_bits != DRV_ENCODER_BITS_16) &&
+        (item->encoder.counter_bits != DRV_ENCODER_BITS_32))
+    {
+        return false;
+    }
+
+    if (item->pwm.duty_max == 0U)
     {
         return false;
     }
@@ -101,8 +106,8 @@ static void mod_motor_set_half_bridge(mod_motor_ctx_t *ctx,
 {
     const mod_motor_hw_cfg_t *p_hw = &ctx->map[id];
 
-    drv_gpio_write(p_hw->in1_port, p_hw->in1_pin, in1_level);
-    drv_gpio_write(p_hw->in2_port, p_hw->in2_pin, in2_level);
+    drv_gpio_write_pin(&p_hw->in1, in1_level);
+    drv_gpio_write_pin(&p_hw->in2, in2_level);
 }
 
 /**
@@ -331,10 +336,7 @@ void mod_motor_init(mod_motor_ctx_t *ctx)
 
         /* 初始化并启动 PWM 通道。 */
         pwm_status = drv_pwm_ctx_init(&ctx->pwm_ctx[i],
-                                      p_hw->pwm_htim,
-                                      p_hw->pwm_channel,
-                                      MOD_MOTOR_DUTY_MAX,
-                                      p_hw->pwm_invert);
+                                      &p_hw->pwm);
         if (pwm_status == DRV_PWM_STATUS_OK)
         {
             pwm_status = drv_pwm_start(&ctx->pwm_ctx[i]);
@@ -343,9 +345,7 @@ void mod_motor_init(mod_motor_ctx_t *ctx)
 
         /* 初始化并启动编码器通道。 */
         enc_status = drv_encoder_ctx_init(&ctx->enc_ctx[i],
-                                             p_hw->enc_htim,
-                                             p_hw->enc_counter_bits,
-                                             p_hw->enc_invert);
+                                          &p_hw->encoder);
         if (enc_status == DRV_ENCODER_STATUS_OK)
         {
             enc_status = drv_encoder_start(&ctx->enc_ctx[i]);

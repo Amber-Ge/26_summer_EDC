@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file    pid_multi.h
  * @brief   多环（串级）PID 通用封装接口定义。
  * @details

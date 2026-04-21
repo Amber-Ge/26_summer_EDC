@@ -35,6 +35,16 @@ void drv_gpio_write(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin, gpio_level_e level)
     HAL_GPIO_WritePin(GPIOx, GPIO_Pin, pin_state);
 }
 
+void drv_gpio_write_pin(const drv_gpio_pin_t *pin, gpio_level_e level)
+{
+    if (pin == NULL)
+    {
+        return;
+    }
+
+    drv_gpio_write((GPIO_TypeDef *)pin->port, (uint16_t)pin->pin, level);
+}
+
 /**
  * @brief 读取指定引脚逻辑电平。
  * @param GPIOx GPIO 端口句柄。
@@ -58,6 +68,16 @@ gpio_level_e drv_gpio_read(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin)
     return (pin_state == GPIO_PIN_SET) ? GPIO_LEVEL_HIGH : GPIO_LEVEL_LOW;
 }
 
+gpio_level_e drv_gpio_read_pin(const drv_gpio_pin_t *pin)
+{
+    if (pin == NULL)
+    {
+        return GPIO_LEVEL_LOW;
+    }
+
+    return drv_gpio_read((GPIO_TypeDef *)pin->port, (uint16_t)pin->pin);
+}
+
 /**
  * @brief 翻转指定引脚输出电平。
  * @param GPIOx GPIO 端口句柄。
@@ -73,4 +93,14 @@ void drv_gpio_toggle(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin)
 
     // 步骤2：调用 HAL 翻转目标引脚输出。
     HAL_GPIO_TogglePin(GPIOx, GPIO_Pin);
+}
+
+void drv_gpio_toggle_pin(const drv_gpio_pin_t *pin)
+{
+    if (pin == NULL)
+    {
+        return;
+    }
+
+    drv_gpio_toggle((GPIO_TypeDef *)pin->port, (uint16_t)pin->pin);
 }

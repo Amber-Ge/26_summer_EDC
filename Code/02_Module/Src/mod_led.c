@@ -57,7 +57,7 @@ static bool mod_led_ctx_ready(const mod_led_ctx_t *ctx)
 static bool mod_led_check_item(const mod_led_hw_cfg_t *item)
 {
     // 步骤1：端口句柄必须有效。
-    if ((item == NULL) || (item->port == NULL))
+    if ((item == NULL) || (item->pin.port == NULL))
     {
         return false;
     }
@@ -179,7 +179,7 @@ void mod_led_on(mod_led_ctx_t *ctx, mod_led_id_e led)
 
     // 步骤2：按 active_level 点亮通道。
     cfg = &ctx->map[(uint8_t)led];
-    drv_gpio_write(cfg->port, cfg->pin, cfg->active_level);
+    drv_gpio_write_pin(&cfg->pin, cfg->active_level);
 }
 
 void mod_led_off(mod_led_ctx_t *ctx, mod_led_id_e led)
@@ -194,7 +194,7 @@ void mod_led_off(mod_led_ctx_t *ctx, mod_led_id_e led)
 
     // 步骤2：写入 active_level 反相电平实现熄灭。
     cfg = &ctx->map[(uint8_t)led];
-    drv_gpio_write(cfg->port, cfg->pin, mod_led_invert_level(cfg->active_level));
+    drv_gpio_write_pin(&cfg->pin, mod_led_invert_level(cfg->active_level));
 }
 
 void mod_led_toggle(mod_led_ctx_t *ctx, mod_led_id_e led)
@@ -209,5 +209,5 @@ void mod_led_toggle(mod_led_ctx_t *ctx, mod_led_id_e led)
 
     // 步骤2：直接翻转引脚输出状态。
     cfg = &ctx->map[(uint8_t)led];
-    drv_gpio_toggle(cfg->port, cfg->pin);
+    drv_gpio_toggle_pin(&cfg->pin);
 }

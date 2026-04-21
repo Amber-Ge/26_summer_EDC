@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file    mod_oled.h
  * @author  姜凯中
  * @version v1.00

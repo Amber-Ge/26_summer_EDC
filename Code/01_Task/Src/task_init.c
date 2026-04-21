@@ -1,19 +1,18 @@
-﻿/**
+/**
  * @file    task_init.c
- * @author  姜凯中
+ * @author  Jiang Kaizhong
  * @version v1.00
- * @date    2026-03-24
- * @brief   系统初始化任务实现。
- * @details
- * 1. InitTask 负责一次性完成模块绑定、初始化和上电安全态设置。
- * 2. 业务任务通过 task_wait_init_done 与初始化时序解耦。
- * 3. 初始化完成后释放 Sem_InitHandle 并自删除，避免重复执行。
+ * @date    2026-04-16
+ * @brief   System assembly entry for one-shot startup binding and init.
  */
 
 #include "task_init.h"
 
-#include "main.h"
+#include <string.h>
+
 #include "adc.h"
+#include "i2c.h"
+#include "main.h"
 #include "tim.h"
 #include "usart.h"
 
@@ -22,77 +21,97 @@
 #include "mod_key.h"
 #include "mod_led.h"
 #include "mod_motor.h"
+#include "mod_oled.h"
 #include "mod_relay.h"
 #include "mod_sensor.h"
+#include "mod_stepper.h"
 #include "mod_vofa.h"
 
-#include "task_stepper.h"
+#include "drv_uart.h"
 
-#include <string.h>
-
-/* 初始化闸门信号量：InitTask 释放，其他任务等待 */
+/* InitTask releases this gate; other tasks wait for it before entering work loops. */
 extern osSemaphoreId_t Sem_InitHandle;
-/* 串口发送互斥锁：VOFA/Stepper 绑定时注入 */
+/* Shared UART TX mutex created by freertos.c and injected into communication modules. */
 extern osMutexId_t PcMutexHandle;
 
-/* ========================= GPIO 分支：LED 绑定表 ========================= */
+/* ========================= Stepper serial bind parameters ========================= */
+#define TASK_INIT_STEPPER_ADDR_1 (1U)
+#define TASK_INIT_STEPPER_ADDR_2 (2U)
+
+/* ========================= GPIO branch: LED bind map ========================= */
 static const mod_led_hw_cfg_t s_led_bind_map[LED_MAX] =
 {
     [LED_RED] = {
-        .port = LED_RED_GPIO_Port,
-        .pin = LED_RED_Pin,
-        .active_level = GPIO_LEVEL_LOW,
+        .pin = {
+            .port = State_LED_GPIO_Port,
+            .pin = State_LED_Pin,
+        },
+        .active_level = GPIO_LEVEL_HIGH,
     },
     [LED_GREEN] = {
-        .port = LED_GREEN_GPIO_Port,
-        .pin = LED_GREEN_Pin,
-        .active_level = GPIO_LEVEL_LOW,
+        .pin = {
+            .port = State_LED_GPIO_Port,
+            .pin = State_LED_Pin,
+        },
+        .active_level = GPIO_LEVEL_HIGH,
     },
     [LED_YELLOW] = {
-        .port = LED_YELLOW_GPIO_Port,
-        .pin = LED_YELLOW_Pin,
-        .active_level = GPIO_LEVEL_LOW,
+        .pin = {
+            .port = State_LED_GPIO_Port,
+            .pin = State_LED_Pin,
+        },
+        .active_level = GPIO_LEVEL_HIGH,
     },
 };
 
-/* ========================= GPIO 分支：继电器绑定表 ========================= */
+/* ========================= GPIO branch: relay bind map ========================= */
 static const mod_relay_hw_cfg_t s_relay_bind_map[RELAY_MAX] =
 {
     [RELAY_LASER] = {
-        .port = Laser_GPIO_Port,
-        .pin = Laser_Pin,
+        .pin = {
+            .port = laser_GPIO_Port,
+            .pin = laser_Pin,
+        },
         .active_level = GPIO_LEVEL_HIGH,
     },
     [RELAY_BUZZER] = {
-        .port = Buzzer_GPIO_Port,
-        .pin = Buzzer_Pin,
+        .pin = {
+            .port = buzzer_GPIO_Port,
+            .pin = buzzer_Pin,
+        },
         .active_level = GPIO_LEVEL_HIGH,
     },
 };
 
-/* ========================= GPIO 分支：按键绑定表 ========================= */
+/* ========================= GPIO branch: key bind map ========================= */
 #define TASK_INIT_KEY_NUM (3U)
 static const mod_key_hw_cfg_t s_key_bind_map[TASK_INIT_KEY_NUM] =
 {
     [0] = {
-        .port = KEY_1_GPIO_Port,
-        .pin = KEY_1_Pin,
+        .pin = {
+            .port = Key1_GPIO_Port,
+            .pin = Key1_Pin,
+        },
         .active_level = GPIO_LEVEL_LOW,
         .click_event = MOD_KEY_EVENT_1_CLICK,
         .double_event = MOD_KEY_EVENT_1_DOUBLE_CLICK,
         .long_event = MOD_KEY_EVENT_1_LONG_PRESS,
     },
     [1] = {
-        .port = KEY_2_GPIO_Port,
-        .pin = KEY_2_Pin,
+        .pin = {
+            .port = Key2_GPIO_Port,
+            .pin = Key2_Pin,
+        },
         .active_level = GPIO_LEVEL_LOW,
         .click_event = MOD_KEY_EVENT_2_CLICK,
         .double_event = MOD_KEY_EVENT_2_DOUBLE_CLICK,
         .long_event = MOD_KEY_EVENT_2_LONG_PRESS,
     },
     [2] = {
-        .port = KEY_3_GPIO_Port,
-        .pin = KEY_3_Pin,
+        .pin = {
+            .port = Key3_GPIO_Port,
+            .pin = Key3_Pin,
+        },
         .active_level = GPIO_LEVEL_LOW,
         .click_event = MOD_KEY_EVENT_3_CLICK,
         .double_event = MOD_KEY_EVENT_3_DOUBLE_CLICK,
@@ -100,93 +119,169 @@ static const mod_key_hw_cfg_t s_key_bind_map[TASK_INIT_KEY_NUM] =
     },
 };
 
-/* ========================= 电机绑定表 ========================= */
+/* ========================= Motor bind map ========================= */
 static const mod_motor_hw_cfg_t s_motor_bind_map[MOD_MOTOR_MAX] =
 {
     [MOD_MOTOR_LEFT] = {
-        .in1_port = AIN2_GPIO_Port,
-        .in1_pin = AIN2_Pin,
-        .in2_port = AIN1_GPIO_Port,
-        .in2_pin = AIN1_Pin,
-        .pwm_htim = &htim4,
-        .pwm_channel = TIM_CHANNEL_1,
-        .pwm_invert = false,
-        .enc_htim = &htim2,
-        .enc_counter_bits = DRV_ENCODER_BITS_32,
-        .enc_invert = false,
+        .in1 = {
+            .port = AIN2_GPIO_Port,
+            .pin = AIN2_Pin,
+        },
+        .in2 = {
+            .port = AIN1_GPIO_Port,
+            .pin = AIN1_Pin,
+        },
+        .pwm = {
+            .instance = &htim3,
+            .channel = TIM_CHANNEL_1,
+            .duty_max = MOD_MOTOR_DUTY_MAX,
+            .invert = false,
+        },
+        .encoder = {
+            .instance = &htim1,
+            .counter_bits = DRV_ENCODER_BITS_16,
+            .invert = false,
+        },
     },
     [MOD_MOTOR_RIGHT] = {
-        .in1_port = BIN1_GPIO_Port,
-        .in1_pin = BIN1_Pin,
-        .in2_port = BIN2_GPIO_Port,
-        .in2_pin = BIN2_Pin,
-        .pwm_htim = &htim4,
-        .pwm_channel = TIM_CHANNEL_2,
-        .pwm_invert = false,
-        .enc_htim = &htim3,
-        .enc_counter_bits = DRV_ENCODER_BITS_16,
-        .enc_invert = true,
+        .in1 = {
+            .port = BIN1_GPIO_Port,
+            .pin = BIN1_Pin,
+        },
+        .in2 = {
+            .port = BIN2_GPIO_Port,
+            .pin = BIN2_Pin,
+        },
+        .pwm = {
+            .instance = &htim3,
+            .channel = TIM_CHANNEL_2,
+            .duty_max = MOD_MOTOR_DUTY_MAX,
+            .invert = false,
+        },
+        .encoder = {
+            .instance = &htim5,
+            .counter_bits = DRV_ENCODER_BITS_32,
+            .invert = true,
+        },
     },
 };
 
-/* ========================= 12 路循迹传感器绑定表 ========================= */
+/* ========================= 8-channel line sensor bind map ========================= */
 static const mod_sensor_map_item_t s_sensor_bind_map[MOD_SENSOR_CHANNEL_NUM] =
 {
-    {GPIOG, GPIO_PIN_0, GPIO_LEVEL_HIGH, 0.60f},
-    {GPIOG, GPIO_PIN_1, GPIO_LEVEL_HIGH, 0.40f},
-    {GPIOG, GPIO_PIN_5, GPIO_LEVEL_HIGH, 0.30f},
-    {GPIOG, GPIO_PIN_6, GPIO_LEVEL_HIGH, 0.20f},
-    {GPIOG, GPIO_PIN_7, GPIO_LEVEL_HIGH, 0.10f},
-    {GPIOG, GPIO_PIN_8, GPIO_LEVEL_HIGH, 0.05f},
-    {GPIOG, GPIO_PIN_9, GPIO_LEVEL_HIGH, -0.05f},
-    {GPIOG, GPIO_PIN_10, GPIO_LEVEL_HIGH, -0.10f},
-    {GPIOG, GPIO_PIN_11, GPIO_LEVEL_HIGH, -0.20f},
-    {GPIOG, GPIO_PIN_12, GPIO_LEVEL_HIGH, -0.30f},
-    {GPIOG, GPIO_PIN_13, GPIO_LEVEL_HIGH, -0.40f},
-    {GPIOG, GPIO_PIN_14, GPIO_LEVEL_HIGH, -0.60f},
+    [0] = {
+        .pin = {
+            .port = L1_GPIO_Port,
+            .pin = L1_Pin,
+        },
+        .line_level = GPIO_LEVEL_HIGH,
+        .factor = 0.40f,
+    },
+    [1] = {
+        .pin = {
+            .port = L2_GPIO_Port,
+            .pin = L2_Pin,
+        },
+        .line_level = GPIO_LEVEL_HIGH,
+        .factor = 0.20f,
+    },
+    [2] = {
+        .pin = {
+            .port = L3_GPIO_Port,
+            .pin = L3_Pin,
+        },
+        .line_level = GPIO_LEVEL_HIGH,
+        .factor = 0.10f,
+    },
+    [3] = {
+        .pin = {
+            .port = L4_GPIO_Port,
+            .pin = L4_Pin,
+        },
+        .line_level = GPIO_LEVEL_HIGH,
+        .factor = 0.05f,
+    },
+    [4] = {
+        .pin = {
+            .port = R4_GPIO_Port,
+            .pin = R4_Pin,
+        },
+        .line_level = GPIO_LEVEL_HIGH,
+        .factor = -0.05f,
+    },
+    [5] = {
+        .pin = {
+            .port = R3_GPIO_Port,
+            .pin = R3_Pin,
+        },
+        .line_level = GPIO_LEVEL_HIGH,
+        .factor = -0.10f,
+    },
+    [6] = {
+        .pin = {
+            .port = R2_GPIO_Port,
+            .pin = R2_Pin,
+        },
+        .line_level = GPIO_LEVEL_HIGH,
+        .factor = -0.20f,
+    },
+    [7] = {
+        .pin = {
+            .port = R1_GPIO_Port,
+            .pin = R1_Pin,
+        },
+        .line_level = GPIO_LEVEL_HIGH,
+        .factor = -0.40f,
+    },
 };
 
 /**
- * @brief 按配置表绑定默认模块上下文。
+ * @brief Inject static board mapping into default module contexts.
  * @details
- * 该函数只做“配置注入”，不执行硬件动作。
+ * This step only assembles resource relations and performs no hardware action.
  */
 static void task_init_bind_map(void)
 {
-    mod_led_ctx_t *led_ctx = mod_led_get_default_ctx();             /* LED 默认上下文 */
-    mod_relay_ctx_t *relay_ctx = mod_relay_get_default_ctx();       /* Relay 默认上下文 */
-    mod_sensor_ctx_t *sensor_ctx = mod_sensor_get_default_ctx();     /* Sensor 默认上下文 */
-    mod_key_ctx_t *key_ctx = mod_key_get_default_ctx();              /* Key 默认上下文 */
-    mod_motor_ctx_t *motor_ctx = mod_motor_get_default_ctx();        /* Motor 默认上下文 */
-    mod_battery_ctx_t *battery_ctx = mod_battery_get_default_ctx();  /* Battery 默认上下文 */
+    mod_led_ctx_t *led_ctx = mod_led_get_default_ctx();
+    mod_relay_ctx_t *relay_ctx = mod_relay_get_default_ctx();
+    mod_sensor_ctx_t *sensor_ctx = mod_sensor_get_default_ctx();
+    mod_key_ctx_t *key_ctx = mod_key_get_default_ctx();
+    mod_motor_ctx_t *motor_ctx = mod_motor_get_default_ctx();
+    mod_battery_ctx_t *battery_ctx = mod_battery_get_default_ctx();
 
-    mod_led_bind_t led_bind;            /* LED 绑定参数 */
-    mod_relay_bind_t relay_bind;        /* Relay 绑定参数 */
-    mod_sensor_bind_t sensor_bind;      /* Sensor 绑定参数 */
-    mod_key_bind_t key_bind;            /* Key 绑定参数 */
-    mod_motor_bind_t motor_bind;        /* Motor 绑定参数 */
-    mod_battery_bind_t battery_bind;    /* Battery 绑定参数 */
+    mod_led_bind_t led_bind;
+    mod_relay_bind_t relay_bind;
+    mod_sensor_bind_t sensor_bind;
+    mod_key_bind_t key_bind;
+    mod_motor_bind_t motor_bind;
+    mod_battery_bind_t battery_bind;
 
+    memset(&led_bind, 0, sizeof(led_bind));
     led_bind.map = s_led_bind_map;
     led_bind.map_num = LED_MAX;
     (void)mod_led_ctx_init(led_ctx, &led_bind);
 
+    memset(&relay_bind, 0, sizeof(relay_bind));
     relay_bind.map = s_relay_bind_map;
     relay_bind.map_num = RELAY_MAX;
     (void)mod_relay_ctx_init(relay_ctx, &relay_bind);
 
+    memset(&sensor_bind, 0, sizeof(sensor_bind));
     sensor_bind.map = s_sensor_bind_map;
     sensor_bind.map_num = MOD_SENSOR_CHANNEL_NUM;
     (void)mod_sensor_ctx_init(sensor_ctx, &sensor_bind);
 
+    memset(&key_bind, 0, sizeof(key_bind));
     key_bind.map = s_key_bind_map;
     key_bind.key_num = TASK_INIT_KEY_NUM;
     (void)mod_key_ctx_init(key_ctx, &key_bind);
 
+    memset(&motor_bind, 0, sizeof(motor_bind));
     motor_bind.map = s_motor_bind_map;
     motor_bind.map_num = MOD_MOTOR_MAX;
     (void)mod_motor_ctx_init(motor_ctx, &motor_bind);
 
+    memset(&battery_bind, 0, sizeof(battery_bind));
     battery_bind.hadc = &hadc1;
     battery_bind.adc_ref_v = MOD_BATTERY_DEFAULT_ADC_REF_V;
     battery_bind.adc_res = MOD_BATTERY_DEFAULT_ADC_RES;
@@ -196,37 +291,43 @@ static void task_init_bind_map(void)
 }
 
 /**
- * @brief 执行基础模块初始化并写入上电安全状态。
+ * @brief Initialize basic modules and write explicit power-on safe states.
  */
 static void task_init_modules(void)
 {
-    mod_led_ctx_t *led_ctx = mod_led_get_default_ctx();         /* LED 默认上下文 */
-    mod_relay_ctx_t *relay_ctx = mod_relay_get_default_ctx();   /* Relay 默认上下文 */
-    mod_sensor_ctx_t *sensor_ctx = mod_sensor_get_default_ctx(); /* Sensor 默认上下文 */
-    mod_motor_ctx_t *motor_ctx = mod_motor_get_default_ctx();   /* Motor 默认上下文 */
+    mod_led_ctx_t *led_ctx = mod_led_get_default_ctx();
+    mod_relay_ctx_t *relay_ctx = mod_relay_get_default_ctx();
+    mod_sensor_ctx_t *sensor_ctx = mod_sensor_get_default_ctx();
+    mod_motor_ctx_t *motor_ctx = mod_motor_get_default_ctx();
 
+    /* Bring simple GPIO modules into known output/input runtime state. */
     mod_led_init(led_ctx);
     mod_relay_init(relay_ctx);
     mod_sensor_init(sensor_ctx);
 
-    /* 上电默认关闭激光继电器。 */
+    /* Explicit power-on safe state: keep laser and buzzer off. */
     mod_relay_off(relay_ctx, RELAY_LASER);
+    mod_relay_off(relay_ctx, RELAY_BUZZER);
 
+    /* Start motor runtime objects, then switch into drive-ready zero-output state. */
     mod_motor_init(motor_ctx);
     mod_motor_set_mode(motor_ctx, MOD_MOTOR_LEFT, MOTOR_MODE_DRIVE);
     mod_motor_set_mode(motor_ctx, MOD_MOTOR_RIGHT, MOTOR_MODE_DRIVE);
+    mod_motor_set_duty(motor_ctx, MOD_MOTOR_LEFT, 0);
+    mod_motor_set_duty(motor_ctx, MOD_MOTOR_RIGHT, 0);
 }
 
 /**
- * @brief 绑定或重绑定 VOFA 默认上下文。
+ * @brief Bind or rebind the default VOFA communication context.
  */
 static void task_init_vofa_bind(void)
 {
-    mod_vofa_ctx_t *vofa_ctx = mod_vofa_get_default_ctx(); /* VOFA 默认上下文 */
-    mod_vofa_bind_t vofa_bind;                              /* VOFA 绑定参数 */
+    mod_vofa_ctx_t *vofa_ctx = mod_vofa_get_default_ctx();
+    mod_vofa_bind_t vofa_bind;
 
     memset(&vofa_bind, 0, sizeof(vofa_bind));
-    vofa_bind.huart = &huart3;
+    /* VOFA debug channel: USART1, PA9 TX / PA10 RX. */
+    vofa_bind.huart = &huart1;
     vofa_bind.tx_mutex = PcMutexHandle;
     vofa_bind.sem_count = 0U;
 
@@ -241,15 +342,16 @@ static void task_init_vofa_bind(void)
 }
 
 /**
- * @brief 绑定或重绑定 K230 默认上下文。
+ * @brief Bind or rebind the default K230 communication context.
  */
 static void task_init_k230_bind(void)
 {
-    mod_k230_ctx_t *k230_ctx = mod_k230_get_default_ctx(); /* K230 默认上下文 */
-    mod_k230_bind_t k230_bind;                              /* K230 绑定参数 */
+    mod_k230_ctx_t *k230_ctx = mod_k230_get_default_ctx();
+    mod_k230_bind_t k230_bind;
 
     memset(&k230_bind, 0, sizeof(k230_bind));
-    k230_bind.huart = &huart4;
+    /* K230 vision link: USART2, PD5 TX / PD6 RX. */
+    k230_bind.huart = &huart2;
     k230_bind.sem_count = 0U;
     k230_bind.tx_mutex = NULL;
     k230_bind.checksum_algo = MOD_K230_CHECKSUM_XOR;
@@ -265,18 +367,66 @@ static void task_init_k230_bind(void)
 }
 
 /**
- * @brief 初始化 Stepper 双轴通道。
+ * @brief Bind dual serial stepper channels to USART3 / USART6.
+ * @details
+ * This project keeps the old serial-control route for the stepper drivers.
  */
 static void task_init_stepper_bind(void)
 {
-    (void)task_stepper_prepare_channels();
+    mod_stepper_ctx_t *stepper1_ctx = mod_stepper_get_default_ctx(MOD_STEPPER_AXIS_1);
+    mod_stepper_ctx_t *stepper2_ctx = mod_stepper_get_default_ctx(MOD_STEPPER_AXIS_2);
+    mod_stepper_bind_t stepper1_bind;
+    mod_stepper_bind_t stepper2_bind;
+
+    memset(&stepper1_bind, 0, sizeof(stepper1_bind));
+    /* Stepper axis 1: USART3, PC10 TX / PC11 RX. */
+    stepper1_bind.huart = &huart3;
+    stepper1_bind.tx_mutex = PcMutexHandle;
+    stepper1_bind.driver_addr = TASK_INIT_STEPPER_ADDR_1;
+    (void)mod_stepper_ctx_init(stepper1_ctx, &stepper1_bind);
+
+    memset(&stepper2_bind, 0, sizeof(stepper2_bind));
+    /* Stepper axis 2: USART6, PC6 TX / PC7 RX. */
+    stepper2_bind.huart = &huart6;
+    stepper2_bind.tx_mutex = PcMutexHandle;
+    stepper2_bind.driver_addr = TASK_INIT_STEPPER_ADDR_2;
+    (void)mod_stepper_ctx_init(stepper2_ctx, &stepper2_bind);
 }
 
 /**
- * @brief 初始化闸门等待函数。
- * @details
- * 首次通过会回填一次信号量，使后续任务快速通过。
+ * @brief Bind OLED to the generated I2C handle and perform its one-shot init.
  */
+static void task_init_oled_bind(void)
+{
+    (void)OLED_BindI2C(&hi2c2, OLED_I2C_ADDR_DEFAULT, OLED_I2C_TIMEOUT_MS_DEFAULT);
+    OLED_Init();
+    OLED_Clear();
+    OLED_Update();
+}
+
+/**
+ * @brief Centralized board assembly hook for this PCB revision.
+ * @details
+ * Order is explicit: inject maps first, init modules second, bind communication last.
+ */
+static void task_init_platform_setup(void)
+{
+    /* Step 1: inject board mapping into default contexts. */
+    task_init_bind_map();
+
+    /* Step 2: initialize basic modules and write safe startup state. */
+    task_init_modules();
+
+    /* Step 3: reset UART driver dispatch state before protocol modules claim ports. */
+    drv_uart_init();
+
+    /* Step 4: bind special peripherals and communication channels. */
+    task_init_oled_bind();
+    task_init_vofa_bind();
+    task_init_k230_bind();
+    task_init_stepper_bind();
+}
+
 void task_wait_init_done(void)
 {
     if (Sem_InitHandle == NULL)
@@ -290,31 +440,17 @@ void task_wait_init_done(void)
     }
 }
 
-/**
- * @brief InitTask 入口：执行一次性初始化并释放闸门。
- * @param argument RTOS 任务参数（当前未使用）。
- */
 void StartInitTask(void *argument)
 {
     (void)argument;
 
-    /* 步骤1：完成默认模块上下文的绑定参数注入。 */
-    task_init_bind_map();
-    /* 步骤2：执行基础模块初始化并写入上电安全态。 */
-    task_init_modules();
+    /* One-shot startup assembly: bind, init, write safe states, then open the gate. */
+    task_init_platform_setup();
 
-    /* 步骤3：绑定通信模块与步进双轴通道。 */
-    task_init_vofa_bind();
-    task_init_k230_bind();
-    task_init_stepper_bind();
-
-    /* 步骤4：释放初始化闸门，允许其他业务任务进入主循环。 */
     if (Sem_InitHandle != NULL)
     {
         (void)osSemaphoreRelease(Sem_InitHandle);
     }
 
-    /* 步骤5：一次性初始化任务执行完毕后自删除。 */
     (void)osThreadTerminate(osThreadGetId());
 }
-

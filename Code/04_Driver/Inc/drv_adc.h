@@ -1,5 +1,5 @@
-﻿/**
- * @file    drv_adc.h
+/**
+* @file    drv_adc.h
  * @author  姜凯中
  * @version v1.00
  * @date    2026-03-24

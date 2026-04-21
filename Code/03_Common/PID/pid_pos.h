@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file    pid_pos.h
  * @brief   位置式 PID 控制器接口定义。
  * @details

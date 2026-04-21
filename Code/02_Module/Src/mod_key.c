@@ -66,7 +66,7 @@ static bool mod_key_ctx_ready(const mod_key_ctx_t *ctx)
 static bool mod_key_check_item(const mod_key_hw_cfg_t *item)
 {
     // 步骤1：基础指针和端口句柄必须有效。
-    if ((item == NULL) || (item->port == NULL))
+    if ((item == NULL) || (item->pin.port == NULL))
     {
         return false;
     }
@@ -109,7 +109,7 @@ static bool mod_key_read_cb(uint8_t key_id, void *user_arg)
 
     // 步骤2：读取硬件电平并按 active_level 判断按下态。
     item = &ctx->map[key_id];
-    level = drv_gpio_read(item->port, item->pin);
+    level = drv_gpio_read_pin(&item->pin);
 
     return (level == item->active_level);
 }

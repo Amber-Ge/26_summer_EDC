@@ -57,7 +57,7 @@ static bool mod_relay_ctx_ready(const mod_relay_ctx_t *ctx)
 static bool mod_relay_check_item(const mod_relay_hw_cfg_t *item)
 {
     // 步骤1：端口句柄必须有效。
-    if ((item == NULL) || (item->port == NULL))
+    if ((item == NULL) || (item->pin.port == NULL))
     {
         return false;
     }
@@ -179,7 +179,7 @@ void mod_relay_on(mod_relay_ctx_t *ctx, mod_relay_id_e relay)
 
     // 步骤2：按 active_level 输出吸合命令。
     cfg = &ctx->map[(uint8_t)relay];
-    drv_gpio_write(cfg->port, cfg->pin, cfg->active_level);
+    drv_gpio_write_pin(&cfg->pin, cfg->active_level);
 }
 
 void mod_relay_off(mod_relay_ctx_t *ctx, mod_relay_id_e relay)
@@ -194,7 +194,7 @@ void mod_relay_off(mod_relay_ctx_t *ctx, mod_relay_id_e relay)
 
     // 步骤2：写入 active_level 反相电平实现断开。
     cfg = &ctx->map[(uint8_t)relay];
-    drv_gpio_write(cfg->port, cfg->pin, mod_relay_invert_level(cfg->active_level));
+    drv_gpio_write_pin(&cfg->pin, mod_relay_invert_level(cfg->active_level));
 }
 
 void mod_relay_toggle(mod_relay_ctx_t *ctx, mod_relay_id_e relay)
@@ -209,5 +209,5 @@ void mod_relay_toggle(mod_relay_ctx_t *ctx, mod_relay_id_e relay)
 
     // 步骤2：直接翻转引脚输出状态。
     cfg = &ctx->map[(uint8_t)relay];
-    drv_gpio_toggle(cfg->port, cfg->pin);
+    drv_gpio_toggle_pin(&cfg->pin);
 }

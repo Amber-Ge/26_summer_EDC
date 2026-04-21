@@ -1,18 +1,59 @@
-# 编译输出目录
+# Build output directories
 build/
-cmake-build-debug/
-cmake-build-release/
+cmake-build-*/
 out/
+Debug/
+Release/
+RelWithDebInfo/
+MinSizeRel/
 
-# IDE 配置文件
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+Makefile
+Testing/
+
+# IDE and editor local files
 .idea/
+.vscode/
 *.iws
 *.iml
-
-# 临时文件
+*.user
+*.suo
 *.tmp
 *.bak
 *.swp
+*~
 
-# STM32 相关临时文件 (根据需要添加)
+# OS local files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Embedded build artifacts
+*.elf
+*.hex
+*.bin
+*.map
+*.lst
+*.list
+*.o
+*.obj
+*.d
+*.dep
+*.su
+*.cyclo
+*.gcno
+*.gcda
+
+# Logs and temporary reports
+*.log
+*.trace
+*.launch
+
+# STM32/CubeMX local temporary files
 Monitor/
+*.ioc.bak
+*.mxproject.bak

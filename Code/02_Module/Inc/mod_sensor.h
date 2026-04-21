@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file    mod_sensor.h
  * @author  姜凯中
  * @version v1.00
@@ -19,15 +19,14 @@
 #include "drv_gpio.h"
 #include "main.h"
 
-#define MOD_SENSOR_CHANNEL_NUM (12U)
+#define MOD_SENSOR_CHANNEL_NUM (8U)
 
 /**
  * @brief 单路传感器硬件映射配置。
  */
 typedef struct
 {
-    GPIO_TypeDef *port;      // GPIO 端口句柄
-    uint16_t pin;            // GPIO 引脚掩码
+    drv_gpio_pin_t pin;      // GPIO 绑定
     gpio_level_e line_level; // 判定为“检测到黑线”时的有效电平
     float factor;            // 权重系数，用于偏差计算
 } mod_sensor_map_item_t;

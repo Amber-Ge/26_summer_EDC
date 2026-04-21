@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file    mod_relay.h
  * @author  姜凯中
  * @version v1.00
@@ -33,8 +33,7 @@ typedef enum
  */
 typedef struct
 {
-    GPIO_TypeDef *port;        // GPIO 端口
-    uint16_t pin;              // GPIO 引脚掩码
+    drv_gpio_pin_t pin;        // GPIO 绑定
     gpio_level_e active_level; // 吸合有效电平
 } mod_relay_hw_cfg_t;
 

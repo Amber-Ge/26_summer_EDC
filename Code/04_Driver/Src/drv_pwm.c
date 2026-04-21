@@ -63,23 +63,21 @@ static bool drv_pwm_is_ctx_inited(const drv_pwm_ctx_t *ctx)
  * @return drv_pwm_status_e 状态码。
  */
 drv_pwm_status_e drv_pwm_ctx_init(drv_pwm_ctx_t *ctx,
-                                  TIM_HandleTypeDef *htim,
-                                  uint32_t channel,
-                                  uint16_t duty_max,
-                                  bool invert)
+                                  const drv_pwm_bind_t *bind)
 {
     /* 步骤1：参数校验。 */
-    if ((ctx == NULL) || (htim == NULL) || (duty_max == 0U) || (!drv_pwm_is_valid_channel(channel)))
+    if ((ctx == NULL) || (bind == NULL) || (bind->instance == NULL) ||
+        (bind->duty_max == 0U) || (!drv_pwm_is_valid_channel(bind->channel)))
     {
         return DRV_PWM_STATUS_INVALID_PARAM;
     }
 
     /* 步骤2：写入静态配置字段。 */
-    ctx->htim = htim;
-    ctx->channel = channel;
-    ctx->duty_max = duty_max;
+    ctx->htim = (TIM_HandleTypeDef *)bind->instance;
+    ctx->channel = bind->channel;
+    ctx->duty_max = bind->duty_max;
     ctx->duty_last = 0U;
-    ctx->invert = invert;
+    ctx->invert = bind->invert;
     ctx->started = false;
 
     /* 步骤3：初始化时清零比较寄存器，建立安全基线。 */

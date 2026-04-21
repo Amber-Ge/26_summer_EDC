@@ -59,20 +59,19 @@ static bool drv_encoder_is_ctx_inited(const drv_encoder_ctx_t *ctx)
  * @return drv_encoder_status_e 状态码。
  */
 drv_encoder_status_e drv_encoder_ctx_init(drv_encoder_ctx_t *ctx,
-                                          TIM_HandleTypeDef *htim,
-                                          uint8_t counter_bits,
-                                          bool invert)
+                                          const drv_encoder_bind_t *bind)
 {
     // 步骤1：参数校验。
-    if ((ctx == NULL) || (htim == NULL) || (!drv_encoder_is_valid_counter_bits(counter_bits)))
+    if ((ctx == NULL) || (bind == NULL) || (bind->instance == NULL) ||
+        (!drv_encoder_is_valid_counter_bits(bind->counter_bits)))
     {
         return DRV_ENCODER_STATUS_INVALID_PARAM;
     }
 
     // 步骤2：写入静态配置并清空运行态。
-    ctx->htim = htim;
-    ctx->counter_bits = counter_bits;
-    ctx->direction = invert ? -1 : 1;
+    ctx->htim = (TIM_HandleTypeDef *)bind->instance;
+    ctx->counter_bits = bind->counter_bits;
+    ctx->direction = bind->invert ? -1 : 1;
     ctx->delta_last = 0;
     ctx->started = false;
 

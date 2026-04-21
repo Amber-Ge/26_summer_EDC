@@ -1,5 +1,5 @@
-﻿/**
- * @file    common_checksum.h
+/**
+* @file    common_checksum.h
  * @brief   通用校验算法接口定义。
  * @details
  * 1. 文件作用：声明字节序列校验接口（当前为 XOR）。

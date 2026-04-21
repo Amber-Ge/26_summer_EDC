@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file    mod_uart_guard.h
  * @author  姜凯中
  * @version v1.00

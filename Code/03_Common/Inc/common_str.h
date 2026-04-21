@@ -1,5 +1,5 @@
-﻿/**
- * @file    common_str.h
+/**
+* @file    common_str.h
  * @brief   通用数值转字符串接口定义。
  * @details
  * 1. 文件作用：提供整数与浮点数到 C 字符串的安全转换接口。

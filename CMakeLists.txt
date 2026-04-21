@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.22)
 
 #
 # This file is generated only once,
@@ -19,7 +19,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Set the project name
-set(CMAKE_PROJECT_NAME FInal_graduate_work)
+set(CMAKE_PROJECT_NAME Summer_26_zgt6_freertos)
 
 # Enable compile command to ease indexing with e.g. clangd
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
@@ -43,17 +43,13 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined library search paths
 )
 
-# Add sources to executable
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE
-        Code/01_Task/Src/task_dcc.c
-        Code/01_Task/Src/task_gpio.c
+# Keep active sources explicit. Anything moved into 99_Archive is retained in
+# the repository for future reuse, but excluded from the default build.
+set(ACTIVE_TASK_SOURCES
         Code/01_Task/Src/task_init.c
-        Code/01_Task/Src/task_key.c
-        Code/01_Task/Src/task_oled.c
-        Code/01_Task/Src/task_test.c
-        Code/01_Task/Src/task_stepper.c
+)
 
-
+set(ACTIVE_MODULE_SOURCES
         Code/02_Module/Src/mod_vofa.c
         Code/02_Module/Src/mod_k230.c
         Code/02_Module/Src/mod_uart_guard.c
@@ -66,24 +62,30 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
         Code/02_Module/Src/mod_stepper.c
         Code/02_Module/Src/mod_oled.c
         Code/02_Module/Src/mod_oled_data.c
+)
 
-
-
+set(ACTIVE_COMMON_SOURCES
         Code/03_Common/Src/common_str.c
         Code/03_Common/Src/common_checksum.c
-
         Code/03_Common/PID/pid_inc.c
         Code/03_Common/PID/pid_pos.c
         Code/03_Common/PID/pid_multi.c
+)
 
-
-
+set(ACTIVE_DRIVER_SOURCES
         Code/04_Driver/Src/drv_gpio.c
         Code/04_Driver/Src/drv_key.c
         Code/04_Driver/Src/drv_uart.c
         Code/04_Driver/Src/drv_adc.c
         Code/04_Driver/Src/drv_pwm.c
         Code/04_Driver/Src/drv_encoder.c
+)
+
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+        ${ACTIVE_TASK_SOURCES}
+        ${ACTIVE_MODULE_SOURCES}
+        ${ACTIVE_COMMON_SOURCES}
+        ${ACTIVE_DRIVER_SOURCES}
 )
 
 # Add include paths
@@ -111,5 +113,3 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 
     # Add user defined libraries
 )
-
-

@@ -1,5 +1,5 @@
-﻿/**
- * @file    pid_inc.h
+/**
+* @file    pid_inc.h
  * @brief   增量式 PID 接口定义。
  * @details
  * 1. 文件作用：声明增量式 PID 数据结构、初始化与迭代计算接口。

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file    comment_template_cn.h
  * @brief   中文注释模板（UTF-8 无乱码）
  * @details

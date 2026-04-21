@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file    mod_motor.h
  * @author  姜凯中
  * @version v1.00
@@ -15,9 +15,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "drv_gpio.h"
 #include "drv_encoder.h"
 #include "drv_pwm.h"
-#include "main.h"
 
 /* 电机绝对占空比上限（与 drv_pwm duty_max 对齐） */
 #define MOD_MOTOR_DUTY_MAX (1000U)
@@ -47,18 +47,10 @@ typedef enum
  */
 typedef struct
 {
-    GPIO_TypeDef *in1_port;      /* TB6612 IN1 端口 */
-    uint16_t in1_pin;            /* TB6612 IN1 引脚 */
-    GPIO_TypeDef *in2_port;      /* TB6612 IN2 端口 */
-    uint16_t in2_pin;            /* TB6612 IN2 引脚 */
-
-    TIM_HandleTypeDef *pwm_htim; /* PWM 定时器句柄 */
-    uint32_t pwm_channel;        /* PWM 通道号 */
-    bool pwm_invert;             /* 占空比反相开关 */
-
-    TIM_HandleTypeDef *enc_htim; /* 编码器定时器句柄 */
-    uint8_t enc_counter_bits;    /* 编码器计数器位宽 */
-    bool enc_invert;             /* 编码器方向反相开关 */
+    drv_gpio_pin_t in1;          /* TB6612 IN1 绑定 */
+    drv_gpio_pin_t in2;          /* TB6612 IN2 绑定 */
+    drv_pwm_bind_t pwm;          /* PWM 驱动绑定 */
+    drv_encoder_bind_t encoder;  /* 编码器驱动绑定 */
 } mod_motor_hw_cfg_t;
 
 /**

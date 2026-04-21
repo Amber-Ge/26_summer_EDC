@@ -25,6 +25,7 @@
  * 2. 支持 mod_stepper_process(NULL) 时轮询全部实例。
  */
 static mod_stepper_ctx_t *s_ctx_by_uart[MOD_STEPPER_MAX_UART_INSTANCES] = {0}; // 模块变量，用于保存运行时状态。
+static mod_stepper_ctx_t s_default_ctx[MOD_STEPPER_AXIS_MAX] = {0};
 
 /**
  * @brief 将 UART 实例地址映射为固定索引。
@@ -58,6 +59,16 @@ static int8_t _ctx_bound_uart_idx(const mod_stepper_ctx_t *ctx)
     }
 
     return -1;
+}
+
+mod_stepper_ctx_t *mod_stepper_get_default_ctx(mod_stepper_axis_e axis)
+{
+    if (axis >= MOD_STEPPER_AXIS_MAX)
+    {
+        return NULL;
+    }
+
+    return &s_default_ctx[(uint8_t)axis];
 }
 
 /**
