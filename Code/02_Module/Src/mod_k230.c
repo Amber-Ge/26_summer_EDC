@@ -12,6 +12,7 @@
  */
 
 #include "mod_k230.h"
+#include "mod_vision.h"
 #include "mod_uart_guard.h"
 #include "common_checksum.h"
 #include <string.h>
@@ -80,6 +81,10 @@ static void _reset_runtime_state(mod_k230_ctx_t *ctx)
     memset(ctx->tx_buf, 0, sizeof(ctx->tx_buf));
     ctx->rx_head = 0U;
     ctx->rx_tail = 0U;
+    ctx->latest_frame_valid = false;
+    memset(&ctx->latest_frame, 0, sizeof(ctx->latest_frame));
+    ctx->latest_raw_frame_valid = false;
+    memset(ctx->latest_raw_frame, 0, sizeof(ctx->latest_raw_frame));
     _reset_parser_state(ctx);
 }
 
@@ -407,7 +412,28 @@ static void _k230_rx_callback_handler(UART_HandleTypeDef *huart,
 
     if (len > 0U)
     {
+        mod_vision_ctx_t *vision_ctx = mod_vision_get_default_ctx();
+
         _ring_push_block(ctx, ctx->rx_dma_buf, len);
+
+        for (uint16_t i = 0U; i < len; i++)
+        {
+            mod_k230_frame_data_t parsed_frame;
+
+            if (_proto_feed_byte(ctx, ctx->rx_dma_buf[i], &parsed_frame))
+            {
+                ctx->latest_frame = parsed_frame;
+                ctx->latest_frame_valid = true;
+                memcpy(ctx->latest_raw_frame, ctx->parse_buf, MOD_K230_PROTO_FRAME_SIZE);
+                ctx->latest_raw_frame_valid = true;
+                (void)mod_vision_update_from_k230(vision_ctx,
+                                                  parsed_frame.motor1_id,
+                                                  parsed_frame.err1,
+                                                  parsed_frame.motor2_id,
+                                                  parsed_frame.err2);
+            }
+        }
+
         _notify_all_bound_semaphores(ctx);
     }
 
@@ -727,43 +753,41 @@ void mod_k230_clear_rx_buffer(mod_k230_ctx_t *ctx)
 
 bool mod_k230_get_latest_frame(mod_k230_ctx_t *ctx, mod_k230_frame_data_t *out_frame)
 {
-    bool got_latest = false;
-    uint8_t read_buf[64];
-    uint16_t read_len;
-    uint8_t batch_count = 0U;
-    mod_k230_frame_data_t latest_frame = {0};
+    uint32_t primask;
 
     if (!_ctx_ready(ctx) || (out_frame == NULL))
     {
         return false;
     }
 
-    do
+    primask = _critical_enter();
+    if (ctx->latest_frame_valid)
     {
-        if (batch_count >= MOD_K230_MAX_READ_BATCH_PER_CALL)
-        {
-            break;
-        }
+        *out_frame = ctx->latest_frame;
+        _critical_exit(primask);
+        return true;
+    }
+    _critical_exit(primask);
+    return false;
+}
 
-        read_len = mod_k230_read_bytes(ctx, read_buf, (uint16_t)sizeof(read_buf));
-        batch_count++;
+bool mod_k230_get_latest_raw_frame(mod_k230_ctx_t *ctx, uint8_t *out_raw_frame)
+{
+    uint32_t primask;
 
-        for (uint16_t i = 0U; i < read_len; i++)
-        {
-            mod_k230_frame_data_t parsed_frame;
-            if (_proto_feed_byte(ctx, read_buf[i], &parsed_frame))
-            {
-                latest_frame = parsed_frame;
-                got_latest = true;
-            }
-        }
-    } while (read_len > 0U);
-
-    if (got_latest)
+    if (!_ctx_ready(ctx) || (out_raw_frame == NULL))
     {
-        *out_frame = latest_frame;
+        return false;
     }
 
-    return got_latest;
+    primask = _critical_enter();
+    if (ctx->latest_raw_frame_valid)
+    {
+        memcpy(out_raw_frame, ctx->latest_raw_frame, MOD_K230_PROTO_FRAME_SIZE);
+        _critical_exit(primask);
+        return true;
+    }
+    _critical_exit(primask);
+    return false;
 }
 

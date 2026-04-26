@@ -26,6 +26,7 @@ typedef enum
     LED_RED = 0, // 红灯
     LED_GREEN,   // 绿灯
     LED_YELLOW,  // 黄灯
+    LED_BROAD,   // 板载调试灯
     LED_MAX      // 通道数量上限
 } mod_led_id_e;
 

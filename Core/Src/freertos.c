@@ -27,6 +27,8 @@
 /* USER CODE BEGIN Includes */
 /* 引入初始化门控接口：默认任务启动后先等待 InitTask 完成全局初始化。 */
 #include "task_init.h"
+#include "task_gimbal.h"
+#include "task_debug.h"
 
 /* USER CODE END Includes */
 
@@ -63,6 +65,20 @@ const osThreadAttr_t InitTask_attributes = {
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityRealtime7,
 };
+/* Definitions for GimbalTask */
+osThreadId_t GimbalTaskHandle;
+const osThreadAttr_t GimbalTask_attributes = {
+  .name = "GimbalTask",
+  .stack_size = 1024 * 4,
+  .priority = (osPriority_t) osPriorityRealtime2,
+};
+/* Definitions for DebugTask */
+osThreadId_t DebugTaskHandle;
+const osThreadAttr_t DebugTask_attributes = {
+  .name = "DebugTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
 /* Definitions for PcMutex */
 osMutexId_t PcMutexHandle;
 const osMutexAttr_t PcMutex_attributes = {
@@ -81,6 +97,8 @@ const osSemaphoreAttr_t Sem_Init_attributes = {
 
 void StartDefaultTask(void *argument);
 extern void StartInitTask(void *argument);
+extern void StartGimbalTask(void *argument);
+extern void StartDebugTask(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -123,6 +141,12 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of InitTask */
   InitTaskHandle = osThreadNew(StartInitTask, NULL, &InitTask_attributes);
+
+  /* creation of GimbalTask */
+  GimbalTaskHandle = osThreadNew(StartGimbalTask, NULL, &GimbalTask_attributes);
+
+  /* creation of DebugTask */
+  DebugTaskHandle = osThreadNew(StartDebugTask, NULL, &DebugTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */

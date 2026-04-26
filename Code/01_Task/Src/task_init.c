@@ -25,6 +25,7 @@
 #include "mod_relay.h"
 #include "mod_sensor.h"
 #include "mod_stepper.h"
+#include "mod_vision.h"
 #include "mod_vofa.h"
 
 #include "drv_uart.h"
@@ -59,6 +60,13 @@ static const mod_led_hw_cfg_t s_led_bind_map[LED_MAX] =
         .pin = {
             .port = State_LED_GPIO_Port,
             .pin = State_LED_Pin,
+        },
+        .active_level = GPIO_LEVEL_HIGH,
+    },
+    [LED_BROAD] = {
+        .pin = {
+            .port = Led_broad_GPIO_Port,
+            .pin = Led_broad_Pin,
         },
         .active_level = GPIO_LEVEL_HIGH,
     },
@@ -367,6 +375,23 @@ static void task_init_k230_bind(void)
 }
 
 /**
+ * @brief 初始化统一视觉语义模块默认上下文。
+ */
+static void task_init_vision_module(void)
+{
+    mod_vision_ctx_t *vision_ctx = mod_vision_get_default_ctx();
+
+    if (!vision_ctx->inited)
+    {
+        (void)mod_vision_ctx_init(vision_ctx);
+    }
+    else
+    {
+        mod_vision_clear(vision_ctx);
+    }
+}
+
+/**
  * @brief Bind dual serial stepper channels to USART3 / USART6.
  * @details
  * This project keeps the old serial-control route for the stepper drivers.
@@ -423,6 +448,7 @@ static void task_init_platform_setup(void)
     /* Step 4: bind special peripherals and communication channels. */
     task_init_oled_bind();
     task_init_vofa_bind();
+    task_init_vision_module();
     task_init_k230_bind();
     task_init_stepper_bind();
 }

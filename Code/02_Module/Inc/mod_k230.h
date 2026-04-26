@@ -95,6 +95,10 @@ typedef struct
 
     uint8_t parse_buf[MOD_K230_PROTO_FRAME_SIZE];      // 协议解析状态机缓存。按字节流逐步拼出固定 12 字节帧。
     uint8_t parse_len;                                 // 当前 parse_buf 已填充字节数。用于表示解析状态机进度。
+    bool latest_frame_valid;                           // 最近一次成功解析的帧是否有效。
+    mod_k230_frame_data_t latest_frame;                // 最近一次成功解析得到的协议帧结果。
+    bool latest_raw_frame_valid;                       // 最近一次成功解析的原始帧是否有效。
+    uint8_t latest_raw_frame[MOD_K230_PROTO_FRAME_SIZE]; // 最近一次成功解析的原始 12 字节协议帧。
 } mod_k230_ctx_t;
 
 /* ========================= Context 生命周期 ========================= */
@@ -241,6 +245,15 @@ void mod_k230_clear_rx_buffer(mod_k230_ctx_t *ctx);
  * @return false 未解析到有效帧或参数非法。
  */
 bool mod_k230_get_latest_frame(mod_k230_ctx_t *ctx, mod_k230_frame_data_t *out_frame);
+
+/**
+ * @brief 获取最近一次成功解析的原始协议帧。
+ * @param ctx 目标上下文。
+ * @param out_raw_frame 输出缓冲，长度必须至少为 `MOD_K230_PROTO_FRAME_SIZE`。
+ * @return true 存在有效原始帧。
+ * @return false 当前无有效原始帧或参数非法。
+ */
+bool mod_k230_get_latest_raw_frame(mod_k230_ctx_t *ctx, uint8_t *out_raw_frame);
 
 #endif /* FINAL_GRADUATE_WORK_MOD_K230_H */
 

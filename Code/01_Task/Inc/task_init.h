@@ -1,6 +1,6 @@
 ﻿/**
  * @file    task_init.h
- * @author  Jiang Kaizhong
+ * @author  Jiang Kaizhong  Yumeng Ge
  * @version v1.00
  * @date    2026-04-09
  * @brief   InitTask centralized assembly interface.

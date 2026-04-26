@@ -1,11 +1,11 @@
 /**
  * @file    task_gimbal.h
- * @brief   Gimbal stepper task interface.
+ * @author  Amber Ge
+ * @brief   云台任务对外接口。
  */
-
-#ifndef SUMMER_26_ZGT6_FREERTOS_TASK_GIMBAL_H
-#define SUMMER_26_ZGT6_FREERTOS_TASK_GIMBAL_H
+#ifndef ZGT6_FREERTOS_TASK_GIMBAL_H
+#define ZGT6_FREERTOS_TASK_GIMBAL_H
 
 void StartGimbalTask(void *argument);
 
-#endif /* SUMMER_26_ZGT6_FREERTOS_TASK_GIMBAL_H */
+#endif /* ZGT6_FREERTOS_TASK_GIMBAL_H */

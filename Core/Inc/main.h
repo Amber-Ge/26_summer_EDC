@@ -65,6 +65,8 @@ void Error_Handler(void);
 #define buzzer_GPIO_Port GPIOE
 #define State_LED_Pin GPIO_PIN_5
 #define State_LED_GPIO_Port GPIOE
+#define Led_broad_Pin GPIO_PIN_13
+#define Led_broad_GPIO_Port GPIOC
 #define AIN1_Pin GPIO_PIN_2
 #define AIN1_GPIO_Port GPIOC
 #define R_B2_Pin GPIO_PIN_0
@@ -105,6 +107,8 @@ void Error_Handler(void);
 #define SM_TX2_GPIO_Port GPIOC
 #define SM_RX2_Pin GPIO_PIN_7
 #define SM_RX2_GPIO_Port GPIOC
+#define Key_User_Pin GPIO_PIN_15
+#define Key_User_GPIO_Port GPIOA
 #define SM_TX1_Pin GPIO_PIN_10
 #define SM_TX1_GPIO_Port GPIOC
 #define SM_RX1_Pin GPIO_PIN_11

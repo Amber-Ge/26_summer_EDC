@@ -33,6 +33,8 @@ enable_language(C ASM)
 
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME}
+        Code/01_Task/Inc/task_chassis.h
+        Code/01_Task/Src/task_chassis.c
 )
 
 # Add STM32CubeMX generated sources
@@ -47,10 +49,13 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # the repository for future reuse, but excluded from the default build.
 set(ACTIVE_TASK_SOURCES
         Code/01_Task/Src/task_init.c
+        Code/01_Task/Src/task_gimbal.c
+        Code/01_Task/Src/task_debug.c
 )
 
 set(ACTIVE_MODULE_SOURCES
         Code/02_Module/Src/mod_vofa.c
+        Code/02_Module/Src/mod_vision.c
         Code/02_Module/Src/mod_k230.c
         Code/02_Module/Src/mod_uart_guard.c
         Code/02_Module/Src/mod_battery.c
@@ -113,3 +118,15 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 
     # Add user defined libraries
 )
+
+if(CMAKE_OBJCOPY)
+    add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_OBJCOPY} -O ihex
+                $<TARGET_FILE:${CMAKE_PROJECT_NAME}>
+                $<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>/${CMAKE_PROJECT_NAME}.hex
+        COMMAND ${CMAKE_OBJCOPY} -O binary
+                $<TARGET_FILE:${CMAKE_PROJECT_NAME}>
+                $<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>/${CMAKE_PROJECT_NAME}.bin
+        COMMENT "Generating ${CMAKE_PROJECT_NAME}.hex and ${CMAKE_PROJECT_NAME}.bin"
+    )
+endif()

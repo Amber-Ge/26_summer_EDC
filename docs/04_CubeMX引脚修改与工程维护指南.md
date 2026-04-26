@@ -205,7 +205,7 @@ Summer_26_zgt6_freertos.ioc
 
 串口是最容易“只改了一半”的地方�?
 
-例如�?VOFA �?`USART3` 换到别的串口，那么至少要改：
+例如�?VOFA �?`USART1` 换到别的串口，那么至少要改：
 
 1. `.ioc` 中该串口和对应引�?
 2. `usart.c`
@@ -215,9 +215,9 @@ Summer_26_zgt6_freertos.ioc
 
 同理�?
 
-1. `mod_k230` 对应 `UART4`
-2. `Stepper X` 对应 `UART5`
-3. `Stepper Y` 对应 `USART2`
+1. `mod_k230` 对应 `USART2`
+2. `Stepper X` 对应 `USART3`
+3. `Stepper Y` 对应 `USART6`
 
 这些改动都不能只在一处完成�?
 
@@ -225,8 +225,8 @@ Summer_26_zgt6_freertos.ioc
 
 底盘 PWM 当前使用�?
 
-1. `TIM4_CH1`
-2. `TIM4_CH2`
+1. `TIM3_CH1`
+2. `TIM3_CH2`
 
 如果修改 PWM 引脚或通道�?
 

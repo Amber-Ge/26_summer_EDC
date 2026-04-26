@@ -24,6 +24,7 @@
 #define DRV_UART_PORT_COUNT (6U)
 
 /**
+ *
  * @brief 旧版接收回调类型（兼容保留）。
  */
 typedef void (*drv_uart_rx_callback_t)(uint16_t len);
