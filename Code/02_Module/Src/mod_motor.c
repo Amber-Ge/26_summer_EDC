@@ -113,14 +113,14 @@ static void mod_motor_set_half_bridge(mod_motor_ctx_t *ctx,
 /**
  * @brief 安全写 PWM duty。
  * @details
- * 任何一次底层写入失败都会把通道降级为 `hw_ready=false`，
+ * 任何一次底层写入失败都会把通道降级为 `pwm_ready=false`，
  * 后续周期会停止对该通道进行主动驱动，避免持续输出异常。
  */
 static void mod_motor_write_pwm_duty_safe(mod_motor_ctx_t *ctx, mod_motor_id_e id, uint16_t duty)
 {
     if (drv_pwm_set_duty(&ctx->pwm_ctx[id], duty) != DRV_PWM_STATUS_OK)
     {
-        ctx->state[id].hw_ready = false;
+        ctx->state[id].pwm_ready = false;
     }
 }
 
@@ -133,7 +133,7 @@ static void mod_motor_write_pwm_duty_safe(mod_motor_ctx_t *ctx, mod_motor_id_e i
  */
 static void mod_motor_apply_drive(mod_motor_ctx_t *ctx, mod_motor_id_e id, uint16_t duty, int8_t sign)
 {
-    if (!ctx->state[id].hw_ready)
+    if (!ctx->state[id].pwm_ready)
     {
         return;
     }
@@ -163,7 +163,7 @@ static void mod_motor_apply_brake(mod_motor_ctx_t *ctx, mod_motor_id_e id)
 {
     mod_motor_set_half_bridge(ctx, id, GPIO_LEVEL_HIGH, GPIO_LEVEL_HIGH);
 
-    if (ctx->state[id].hw_ready)
+    if (ctx->state[id].pwm_ready)
     {
         /* 刹车模式下 PWM 拉到最大，提升制动力。 */
         mod_motor_write_pwm_duty_safe(ctx, id, drv_pwm_get_duty_max(&ctx->pwm_ctx[id]));
@@ -177,7 +177,7 @@ static void mod_motor_apply_coast(mod_motor_ctx_t *ctx, mod_motor_id_e id)
 {
     mod_motor_set_half_bridge(ctx, id, GPIO_LEVEL_LOW, GPIO_LEVEL_LOW);
 
-    if (ctx->state[id].hw_ready)
+    if (ctx->state[id].pwm_ready)
     {
         mod_motor_write_pwm_duty_safe(ctx, id, 0U);
     }
@@ -332,7 +332,8 @@ void mod_motor_init(mod_motor_ctx_t *ctx)
         p_state->pending_duty = 0;
         p_state->current_speed = 0;
         p_state->total_position = 0;
-        p_state->hw_ready = false;
+        p_state->pwm_ready = false;
+        p_state->enc_ready = false;
 
         /* 初始化并启动 PWM 通道。 */
         pwm_status = drv_pwm_ctx_init(&ctx->pwm_ctx[i],
@@ -352,8 +353,9 @@ void mod_motor_init(mod_motor_ctx_t *ctx)
         }
         enc_ok = (enc_status == DRV_ENCODER_STATUS_OK);
 
-        /* 仅当 PWM 与编码器都正常时才标记通道可用。 */
-        p_state->hw_ready = (bool)(pwm_ok && enc_ok);
+        /* 联调阶段拆分就绪状态：驱动与编码器互不互锁。 */
+        p_state->pwm_ready = pwm_ok;
+        p_state->enc_ready = enc_ok;
 
         /* 上电后统一进入滑行安全态。 */
         mod_motor_apply_coast(ctx, (mod_motor_id_e)i);
@@ -407,8 +409,8 @@ void mod_motor_set_duty(mod_motor_ctx_t *ctx, mod_motor_id_e id, int16_t duty)
 
     p_state = &ctx->state[id];
 
-    /* 非 DRIVE 模式或硬件异常时，拒绝处理 duty 命令。 */
-    if (!(p_state->hw_ready && (p_state->mode == MOTOR_MODE_DRIVE)))
+    /* 非 DRIVE 模式或 PWM 未就绪时，拒绝处理 duty 命令。 */
+    if (!(p_state->pwm_ready && (p_state->mode == MOTOR_MODE_DRIVE)))
     {
         return;
     }
@@ -463,24 +465,24 @@ void mod_motor_tick(mod_motor_ctx_t *ctx)
         mod_motor_channel_state_t *p_state = &ctx->state[i];
         int32_t encoder_delta = 0;
 
-        if (!p_state->hw_ready)
+        if (p_state->enc_ready)
         {
-            p_state->current_speed = 0;
-            continue;
-        }
-
-        /* 读取编码器增量并更新速度/位置反馈。 */
-        if (drv_encoder_get_delta(&ctx->enc_ctx[i], &encoder_delta) == DRV_ENCODER_STATUS_OK)
-        {
-            p_state->current_speed = encoder_delta;
-            p_state->total_position += (int64_t)p_state->current_speed;
+            /* 读取编码器增量并更新速度/位置反馈。 */
+            if (drv_encoder_get_delta(&ctx->enc_ctx[i], &encoder_delta) == DRV_ENCODER_STATUS_OK)
+            {
+                p_state->current_speed = encoder_delta;
+                p_state->total_position += (int64_t)p_state->current_speed;
+            }
+            else
+            {
+                /* 反馈链路失效后，仅关闭编码器反馈，不连带禁止 PWM。 */
+                p_state->enc_ready = false;
+                p_state->current_speed = 0;
+            }
         }
         else
         {
-            /* 反馈链路失效后，降级为不可用通道。 */
-            p_state->hw_ready = false;
             p_state->current_speed = 0;
-            continue;
         }
 
         /* 释放过零保护挂起命令（仅 DRIVE 模式下生效）。 */
@@ -523,5 +525,45 @@ int64_t mod_motor_get_position(const mod_motor_ctx_t *ctx, mod_motor_id_e id)
     }
 
     return ctx->state[id].total_position;
+}
+
+bool mod_motor_is_encoder_ready(const mod_motor_ctx_t *ctx, mod_motor_id_e id)
+{
+    if (!mod_motor_is_valid_id(id))
+    {
+        return false;
+    }
+
+    if (!mod_motor_is_ctx_ready(ctx))
+    {
+        return false;
+    }
+
+    return ctx->state[id].enc_ready;
+}
+
+int32_t mod_motor_get_encoder_counter_raw(const mod_motor_ctx_t *ctx, mod_motor_id_e id)
+{
+    if (!mod_motor_is_valid_id(id))
+    {
+        return 0;
+    }
+
+    if (!mod_motor_is_ctx_ready(ctx))
+    {
+        return 0;
+    }
+
+    if (!ctx->state[id].enc_ready)
+    {
+        return 0;
+    }
+
+    if (ctx->enc_ctx[id].counter_bits == DRV_ENCODER_BITS_16)
+    {
+        return (int32_t)((int16_t)__HAL_TIM_GET_COUNTER(ctx->enc_ctx[id].htim));
+    }
+
+    return (int32_t)__HAL_TIM_GET_COUNTER(ctx->enc_ctx[id].htim);
 }
 

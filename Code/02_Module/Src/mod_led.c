@@ -24,7 +24,7 @@ static mod_led_ctx_t s_default_ctx; // s_default_ctx：模块默认上下文实�
  */
 static bool mod_led_is_valid_id(mod_led_id_e led)
 {
-    return ((led >= LED_RED) && (led < LED_MAX));
+    return ((led >= LED_STATE) && (led < LED_MAX));
 }
 
 /**

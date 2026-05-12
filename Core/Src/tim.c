@@ -92,7 +92,7 @@ void MX_TIM3_Init(void)
   htim3.Instance = TIM3;
   htim3.Init.Prescaler = 3;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 65535;
+  htim3.Init.Period = 999;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -276,7 +276,7 @@ void HAL_TIM_Encoder_MspInit(TIM_HandleTypeDef* tim_encoderHandle)
     PA0-WKUP     ------> TIM5_CH1
     PA1     ------> TIM5_CH2
     */
-    GPIO_InitStruct.Pin = R_B2_Pin|R_B2A1_Pin;
+    GPIO_InitStruct.Pin = R_B1_Pin|R_B2_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_PULLUP;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -398,7 +398,7 @@ void HAL_TIM_Encoder_MspDeInit(TIM_HandleTypeDef* tim_encoderHandle)
     PA0-WKUP     ------> TIM5_CH1
     PA1     ------> TIM5_CH2
     */
-    HAL_GPIO_DeInit(GPIOA, R_B2_Pin|R_B2A1_Pin);
+    HAL_GPIO_DeInit(GPIOA, R_B1_Pin|R_B2_Pin);
 
   /* USER CODE BEGIN TIM5_MspDeInit 1 */
 

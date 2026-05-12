@@ -100,10 +100,10 @@
 
 1. [系统启动流程与运行逻辑总览](docs/06_系统启动流程与运行逻辑总览.md)
 2. [CubeMX引脚修改与工程维护指南](docs/04_CubeMX引脚修改与工程维护指�?md)
-3. [任务层开发与维护指南](Code/01_Task/任务层开发与维护指南.md)
-4. [模块层开发与维护指南](Code/02_Module/模块层开发与维护指南.md)
-5. [公共层开发与维护指南](Code/03_Common/公共层开发与维护指南.md)
-6. [驱动层开发与维护指南](Code/04_Driver/驱动层开发与维护指南.md)
+3. [任务层开发与维护指南](../../CLion_code/freertos_C8t6_2026spring/Water_the_flowers_ft/Code/01_Task/任务层开发与维护指南.md)
+4. [模块层开发与维护指南](../../CLion_code/freertos_C8t6_2026spring/Water_the_flowers_ft/Code/02_Module/模块层开发与维护指南.md)
+5. [公共层开发与维护指南](../../CLion_code/freertos_C8t6_2026spring/Water_the_flowers_ft/Code/03_Common/公共层开发与维护指南.md)
+6. [驱动层开发与维护指南](../../CLion_code/freertos_C8t6_2026spring/Water_the_flowers_ft/Code/04_Driver/驱动层开发与维护指南.md)
 7. [通用驱动库移植与扩展指南](docs/08_通用驱动库移植与扩展指南.md)
 8. [目录分层与归档说明](docs/10_目录分层与归档说明.md)
 9. [文档维护与更新规范](docs/09_文档维护与更新规范.md)
@@ -113,7 +113,7 @@
 按下面顺序阅读：
 
 1. 本文�?
-2. [毕业设计作品说明（归档）](Code/99_Archive/docs/07_毕业设计作品说明.md)
+2. [毕业设计作品说明（归档）](../../CLion_code/freertos_C8t6_2026spring/Water_the_flowers_ft/Code/99_Archive/docs/07_毕业设计作品说明.md)
 3. [系统启动流程与运行逻辑总览](docs/06_系统启动流程与运行逻辑总览.md)
 4. [硬件连接与外设映射总表](docs/05_硬件连接与外设映射总表.md)
 
@@ -127,17 +127,17 @@
 | [CubeMX引脚修改与工程维护指南](docs/04_CubeMX引脚修改与工程维护指�?md) | 讲怎么改引脚、改外设、重新生成代码而不破坏分层 | 维护�?|
 | [硬件连接与外设映射总表](docs/05_硬件连接与外设映射总表.md) | 汇总所有硬件接口、引脚、注意事�?| 新手、维护�?|
 | [系统启动流程与运行逻辑总览](docs/06_系统启动流程与运行逻辑总览.md) | 从上电到任务运行的全链路说明 | 所有人 |
-| [毕业设计作品说明（归档）](Code/99_Archive/docs/07_毕业设计作品说明.md) | 保留项目专属说明，不作为当前主干入口 | 答辩、评阅 |
+| [毕业设计作品说明（归档）](../../CLion_code/freertos_C8t6_2026spring/Water_the_flowers_ft/Code/99_Archive/docs/07_毕业设计作品说明.md) | 保留项目专属说明，不作为当前主干入口 | 答辩、评阅 |
 | [目录分层与归档说明](docs/10_目录分层与归档说明.md) | 说明主干层次、归档规则与长期保留资产 | 维护者 |
 | [通用驱动库移植与扩展指南](docs/08_通用驱动库移植与扩展指南.md) | 说明这套分层代码怎么复用到别的工�?| 维护者、学习�?|
 | [文档维护与更新规范](docs/09_文档维护与更新规范.md) | 规定代码变更后文档该怎么同步更新 | 维护者 |
 
 ### 6.1 分层手册索引
 
-1. [任务层开发与维护指南](Code/01_Task/任务层开发与维护指南.md)
-2. [模块层开发与维护指南](Code/02_Module/模块层开发与维护指南.md)
-3. [公共层开发与维护指南](Code/03_Common/公共层开发与维护指南.md)
-4. [驱动层开发与维护指南](Code/04_Driver/驱动层开发与维护指南.md)
+1. [任务层开发与维护指南](../../CLion_code/freertos_C8t6_2026spring/Water_the_flowers_ft/Code/01_Task/任务层开发与维护指南.md)
+2. [模块层开发与维护指南](../../CLion_code/freertos_C8t6_2026spring/Water_the_flowers_ft/Code/02_Module/模块层开发与维护指南.md)
+3. [公共层开发与维护指南](../../CLion_code/freertos_C8t6_2026spring/Water_the_flowers_ft/Code/03_Common/公共层开发与维护指南.md)
+4. [驱动层开发与维护指南](../../CLion_code/freertos_C8t6_2026spring/Water_the_flowers_ft/Code/04_Driver/驱动层开发与维护指南.md)
 
 ## 7. 硬件平台概览
 

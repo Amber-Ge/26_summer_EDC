@@ -51,6 +51,8 @@ set(ACTIVE_TASK_SOURCES
         Code/01_Task/Src/task_init.c
         Code/01_Task/Src/task_gimbal.c
         Code/01_Task/Src/task_debug.c
+        Code/01_Task/Src/task_input.c
+        Code/01_Task/Src/task_ui.c
 )
 
 set(ACTIVE_MODULE_SOURCES

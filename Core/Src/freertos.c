@@ -29,6 +29,8 @@
 #include "task_init.h"
 #include "task_gimbal.h"
 #include "task_debug.h"
+#include "task_input.h"
+#include "task_ui.h"
 
 /* USER CODE END Includes */
 
@@ -51,12 +53,12 @@
 /* USER CODE BEGIN Variables */
 
 /* USER CODE END Variables */
-/* Definitions for defaultTask */
-osThreadId_t defaultTaskHandle;
-const osThreadAttr_t defaultTask_attributes = {
-  .name = "defaultTask",
+/* Definitions for uiTask */
+osThreadId_t uiTaskHandle;
+const osThreadAttr_t uiTask_attributes = {
+  .name = "uiTask",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for InitTask */
 osThreadId_t InitTaskHandle;
@@ -79,6 +81,20 @@ const osThreadAttr_t DebugTask_attributes = {
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
+/* Definitions for ChassisTask */
+osThreadId_t ChassisTaskHandle;
+const osThreadAttr_t ChassisTask_attributes = {
+  .name = "ChassisTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityRealtime,
+};
+/* Definitions for inputTask */
+osThreadId_t inputTaskHandle;
+const osThreadAttr_t inputTask_attributes = {
+  .name = "inputTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityRealtime,
+};
 /* Definitions for PcMutex */
 osMutexId_t PcMutexHandle;
 const osMutexAttr_t PcMutex_attributes = {
@@ -95,10 +111,12 @@ const osSemaphoreAttr_t Sem_Init_attributes = {
 
 /* USER CODE END FunctionPrototypes */
 
-void StartDefaultTask(void *argument);
+void StartUiTask(void *argument);
 extern void StartInitTask(void *argument);
 extern void StartGimbalTask(void *argument);
 extern void StartDebugTask(void *argument);
+extern void StartChassisTask(void *argument);
+extern void StartInputTask(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -136,8 +154,8 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* creation of defaultTask */
-  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+  /* creation of uiTask */
+  uiTaskHandle = osThreadNew(StartUiTask, NULL, &uiTask_attributes);
 
   /* creation of InitTask */
   InitTaskHandle = osThreadNew(StartInitTask, NULL, &InitTask_attributes);
@@ -147,6 +165,12 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of DebugTask */
   DebugTaskHandle = osThreadNew(StartDebugTask, NULL, &DebugTask_attributes);
+
+  /* creation of ChassisTask */
+  ChassisTaskHandle = osThreadNew(StartChassisTask, NULL, &ChassisTask_attributes);
+
+  /* creation of inputTask */
+  inputTaskHandle = osThreadNew(StartInputTask, NULL, &inputTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -158,28 +182,22 @@ void MX_FREERTOS_Init(void) {
 
 }
 
-/* USER CODE BEGIN Header_StartDefaultTask */
+/* USER CODE BEGIN Header_StartuiTask */
 /**
-  * @brief  Function implementing the defaultTask thread.
+  * @brief  Function implementing the uiTask thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void *argument)
+/* USER CODE END Header_StartuiTask */
+__weak void StartUiTask(void *argument)
 {
-  /* USER CODE BEGIN StartDefaultTask */
-  /*
-   * 统一启动门控：
-   * 默认任务通常最先被调度到，先在此等待可确保系统“初始化先于业务任务”。
-   * InitTask 释放 Sem_Init 后，该门控会保持常开状态。
-   */
-  task_wait_init_done();
+  /* USER CODE BEGIN StartuiTask */
   /* Infinite loop */
   for(;;)
   {
     osDelay(1);
   }
-  /* USER CODE END StartDefaultTask */
+  /* USER CODE END StartuiTask */
 }
 
 /* Private application code --------------------------------------------------*/

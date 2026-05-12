@@ -51,6 +51,27 @@ void OLED_UnbindI2C(void);
  */
 bool OLED_IsBoundI2C(void);
 
+/**
+ * @brief 探测当前绑定的 OLED 设备是否在 I2C 总线上应答。
+ * @return true 设备在线。
+ * @return false 未绑定或设备未应答。
+ */
+bool OLED_Probe(void);
+
+/**
+ * @brief 查询最近一次探测结果是否表明 OLED 设备在线。
+ * @return true 设备在线。
+ * @return false 设备离线或尚未探测。
+ */
+bool OLED_IsPresent(void);
+
+/**
+ * @brief 查询 OLED 是否已完成初始化并可执行实际刷新。
+ * @return true 已完成初始化。
+ * @return false 未初始化或设备不在线。
+ */
+bool OLED_IsReady(void);
+
 /* 基础显示控制 */
 void OLED_Init(void);
 void OLED_Update(void);

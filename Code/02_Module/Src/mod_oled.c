@@ -35,6 +35,8 @@ static I2C_HandleTypeDef *s_oled_hi2c = NULL; // OLED 当前绑定的 I2C 句柄
 static uint16_t s_oled_i2c_addr = 0U; // OLED I2C 地址（7bit 左移后）
 static uint32_t s_oled_i2c_timeout_ms = 0U; // OLED I2C 超时时间
 static bool s_oled_i2c_bound = false; // OLED I2C 绑定状态
+static bool s_oled_present = false; // OLED 在线探测结果
+static bool s_oled_ready = false; // OLED 初始化完成状态
 
 /**
  * @brief 等待 I2C 外设进入可发送状态。
@@ -313,6 +315,8 @@ bool OLED_BindI2C(I2C_HandleTypeDef *hi2c, uint16_t dev_addr, uint32_t timeout_m
     s_oled_i2c_addr = dev_addr;
     s_oled_i2c_timeout_ms = timeout_ms;
     s_oled_i2c_bound = true;
+    s_oled_present = false;
+    s_oled_ready = false;
 
     // 3. 返回绑定成功
     return true;
@@ -330,6 +334,8 @@ void OLED_UnbindI2C(void)
     s_oled_i2c_addr = 0U;
     s_oled_i2c_timeout_ms = 0U;
     s_oled_i2c_bound = false;
+    s_oled_present = false;
+    s_oled_ready = false;
 
     // 2. 复位发送状态，防止残留状态影响后续流程
     s_oled_tx_done = 1U;
@@ -346,6 +352,56 @@ bool OLED_IsBoundI2C(void)
 {
     // 1. 句柄非空且状态标志为true，才算完成绑定
     return (bool)(s_oled_i2c_bound && (s_oled_hi2c != NULL));
+}
+
+/**
+ * @brief 探测当前绑定 OLED 是否在线。
+ * @param 无。
+ * @return true 设备在线。
+ * @return false 未绑定或设备未应答。
+ */
+bool OLED_Probe(void)
+{
+    HAL_StatusTypeDef status; // I2C 探测结果
+
+    if (!OLED_IsBoundI2C())
+    {
+        s_oled_present = false;
+        s_oled_ready = false;
+        return false;
+    }
+
+    status = HAL_I2C_IsDeviceReady(s_oled_hi2c, s_oled_i2c_addr, 1U, s_oled_i2c_timeout_ms);
+    s_oled_present = (status == HAL_OK);
+
+    if (!s_oled_present)
+    {
+        s_oled_ready = false;
+    }
+
+    return s_oled_present;
+}
+
+/**
+ * @brief 查询 OLED 最近一次探测结果。
+ * @param 无。
+ * @return true 设备在线。
+ * @return false 设备离线或尚未探测。
+ */
+bool OLED_IsPresent(void)
+{
+    return s_oled_present;
+}
+
+/**
+ * @brief 查询 OLED 是否已完成初始化。
+ * @param 无。
+ * @return true 已完成初始化。
+ * @return false 未初始化或设备离线。
+ */
+bool OLED_IsReady(void)
+{
+    return (bool)(OLED_IsBoundI2C() && s_oled_present && s_oled_ready);
 }
 
 /**
@@ -378,6 +434,13 @@ void OLED_Init(void)
     // 1. 强制绑定检查：未绑定时不执行初始化序列
     if (!OLED_IsBoundI2C())
     {
+        s_oled_ready = false;
+        return;
+    }
+
+    if (!OLED_IsPresent() && !OLED_Probe())
+    {
+        s_oled_ready = false;
         return;
     }
 
@@ -392,6 +455,7 @@ void OLED_Init(void)
     // 2. 清空显存并整屏刷新
     OLED_Clear();
     OLED_Update();
+    s_oled_ready = true;
 }
 
 /**
@@ -402,6 +466,11 @@ void OLED_Init(void)
 void OLED_Update(void)
 {
     uint8_t page; // 页索引
+
+    if (!OLED_IsReady())
+    {
+        return;
+    }
 
     // 1. 遍历 8 页并把显存页写入 OLED
     for (page = 0U; page < OLED_PAGE_NUM; page++) // 循环计数器
@@ -424,6 +493,11 @@ void OLED_UpdateArea(uint8_t X, uint8_t Y, uint8_t Width, uint8_t Height)
     uint8_t start_page; // 起始页
     uint8_t end_page; // 结束页
     uint8_t page; // 当前页
+
+    if (!OLED_IsReady())
+    {
+        return;
+    }
 
     // 1. 参数与边界校验
     if ((X >= OLED_WIDTH) || (Y >= OLED_HEIGHT) || (Width == 0U) || (Height == 0U))

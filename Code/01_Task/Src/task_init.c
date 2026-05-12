@@ -1,6 +1,6 @@
 /**
  * @file    task_init.c
- * @author  Jiang Kaizhong
+ * @author  Amber Ge
  * @version v1.00
  * @date    2026-04-16
  * @brief   System assembly entry for one-shot startup binding and init.
@@ -42,24 +42,10 @@ extern osMutexId_t PcMutexHandle;
 /* ========================= GPIO branch: LED bind map ========================= */
 static const mod_led_hw_cfg_t s_led_bind_map[LED_MAX] =
 {
-    [LED_RED] = {
+    [LED_STATE] = {
         .pin = {
-            .port = State_LED_GPIO_Port,
-            .pin = State_LED_Pin,
-        },
-        .active_level = GPIO_LEVEL_HIGH,
-    },
-    [LED_GREEN] = {
-        .pin = {
-            .port = State_LED_GPIO_Port,
-            .pin = State_LED_Pin,
-        },
-        .active_level = GPIO_LEVEL_HIGH,
-    },
-    [LED_YELLOW] = {
-        .pin = {
-            .port = State_LED_GPIO_Port,
-            .pin = State_LED_Pin,
+            .port = Led_state_GPIO_Port,
+            .pin = Led_state_Pin,
         },
         .active_level = GPIO_LEVEL_HIGH,
     },
@@ -132,12 +118,12 @@ static const mod_motor_hw_cfg_t s_motor_bind_map[MOD_MOTOR_MAX] =
 {
     [MOD_MOTOR_LEFT] = {
         .in1 = {
-            .port = AIN2_GPIO_Port,
-            .pin = AIN2_Pin,
-        },
-        .in2 = {
             .port = AIN1_GPIO_Port,
             .pin = AIN1_Pin,
+        },
+        .in2 = {
+            .port = AIN2_GPIO_Port,
+            .pin = AIN2_Pin,
         },
         .pwm = {
             .instance = &htim3,
@@ -183,7 +169,7 @@ static const mod_sensor_map_item_t s_sensor_bind_map[MOD_SENSOR_CHANNEL_NUM] =
             .pin = L1_Pin,
         },
         .line_level = GPIO_LEVEL_HIGH,
-        .factor = 0.40f,
+        .factor = 0.30f,
     },
     [1] = {
         .pin = {
@@ -191,7 +177,7 @@ static const mod_sensor_map_item_t s_sensor_bind_map[MOD_SENSOR_CHANNEL_NUM] =
             .pin = L2_Pin,
         },
         .line_level = GPIO_LEVEL_HIGH,
-        .factor = 0.20f,
+        .factor = 0.10f,
     },
     [2] = {
         .pin = {
@@ -199,7 +185,7 @@ static const mod_sensor_map_item_t s_sensor_bind_map[MOD_SENSOR_CHANNEL_NUM] =
             .pin = L3_Pin,
         },
         .line_level = GPIO_LEVEL_HIGH,
-        .factor = 0.10f,
+        .factor = 0.05f,
     },
     [3] = {
         .pin = {
@@ -207,7 +193,7 @@ static const mod_sensor_map_item_t s_sensor_bind_map[MOD_SENSOR_CHANNEL_NUM] =
             .pin = L4_Pin,
         },
         .line_level = GPIO_LEVEL_HIGH,
-        .factor = 0.05f,
+        .factor = 0.025f,
     },
     [4] = {
         .pin = {
@@ -215,7 +201,7 @@ static const mod_sensor_map_item_t s_sensor_bind_map[MOD_SENSOR_CHANNEL_NUM] =
             .pin = R4_Pin,
         },
         .line_level = GPIO_LEVEL_HIGH,
-        .factor = -0.05f,
+        .factor = -0.025f,
     },
     [5] = {
         .pin = {
@@ -223,7 +209,7 @@ static const mod_sensor_map_item_t s_sensor_bind_map[MOD_SENSOR_CHANNEL_NUM] =
             .pin = R3_Pin,
         },
         .line_level = GPIO_LEVEL_HIGH,
-        .factor = -0.10f,
+        .factor = -0.05f,
     },
     [6] = {
         .pin = {
@@ -231,7 +217,7 @@ static const mod_sensor_map_item_t s_sensor_bind_map[MOD_SENSOR_CHANNEL_NUM] =
             .pin = R2_Pin,
         },
         .line_level = GPIO_LEVEL_HIGH,
-        .factor = -0.20f,
+        .factor = -0.10f,
     },
     [7] = {
         .pin = {
@@ -239,7 +225,7 @@ static const mod_sensor_map_item_t s_sensor_bind_map[MOD_SENSOR_CHANNEL_NUM] =
             .pin = R1_Pin,
         },
         .line_level = GPIO_LEVEL_HIGH,
-        .factor = -0.40f,
+        .factor = -0.30f,
     },
 };
 
@@ -427,6 +413,7 @@ static void task_init_oled_bind(void)
     OLED_Init();
     OLED_Clear();
     OLED_Update();
+
 }
 
 /**
@@ -436,21 +423,18 @@ static void task_init_oled_bind(void)
  */
 static void task_init_platform_setup(void)
 {
-    /* Step 1: inject board mapping into default contexts. */
+
     task_init_bind_map();
-
-    /* Step 2: initialize basic modules and write safe startup state. */
     task_init_modules();
-
-    /* Step 3: reset UART driver dispatch state before protocol modules claim ports. */
     drv_uart_init();
-
-    /* Step 4: bind special peripherals and communication channels. */
     task_init_oled_bind();
     task_init_vofa_bind();
     task_init_vision_module();
     task_init_k230_bind();
     task_init_stepper_bind();
+
+
+
 }
 
 void task_wait_init_done(void)
